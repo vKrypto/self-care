@@ -157,7 +157,8 @@ class CollectionHistoryStore(
             val section = rawBatch(id)?.getJSONObject("payload")?.getJSONObject("data")?.optJSONObject(source)
             if (section != null) {
                 hasDetails = true
-                val metadata = JSONObject(section.toString()).apply { remove("records") }
+                val metadata = JSONObject()
+                for (key in section.keys()) if (key != "records") metadata.put(key, section.get(key))
                 sections.put(JSONObject().put("batchId", id).put("metadata", metadata))
                 val values = section.optJSONArray("records") ?: JSONArray()
                 for (index in 0 until values.length()) {
@@ -259,6 +260,10 @@ class CollectionHistoryStore(
                 val previous = sources[name]
                 sources[name] = JSONObject(entry.toString())
                     .put("recordCount", (previous?.optLong("recordCount", 0) ?: 0) + entry.getLong("recordCount"))
+                    .put("status", if (previous == null || previous.getString("status") == entry.getString("status"))
+                        entry.getString("status") else "mixed")
+                    .put("complete", previous?.optBoolean("complete", true) != false && entry.getBoolean("complete"))
+                    .put("reason", if (entry.isNull("reason")) previous?.opt("reason") ?: JSONObject.NULL else entry.get("reason"))
                     .put("collected", previous?.optBoolean("collected") == true || entry.getBoolean("collected"))
                     .put("detailsAvailable", previous?.optBoolean("detailsAvailable") == true || (rawExists && entry.getBoolean("collected")))
             }
@@ -303,8 +308,8 @@ class CollectionHistoryStore(
         archives.values.toList().filter { it.syncedAt < retentionStart() }.forEach { removeArchive(it) }
         makeArchiveRoom(0)
         // Queued and currently running jobs stay visible regardless of the finished-summary cap.
-        val protected = queuedIds().mapNotNull { batchJobs[it] }.toSet()
         currentQueuedIds = queuedIds().toSet()
+        val protected = currentQueuedIds.mapNotNull { batchJobs[it] }.toSet()
         val finished = jobs.values.filter { it.getString("id") !in protected && it.optString("status") != "running" }
             .sortedWith(compareByDescending<JSONObject> { it.getLong("startedAt") }.thenByDescending { it.getString("id") })
         finished.drop(maxFinishedJobs).forEach { job ->

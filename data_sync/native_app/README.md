@@ -293,9 +293,15 @@ cd android
 The Android 15 (API 35) smoke check covered updating the installed preview APK,
 skipping login, granting Usage Access, collecting without an account/server,
 keeping the local queue after an app restart, and separate collection
-pause/resume. Automated checks cover queue recovery, ownership, permissions,
-lifecycle routing, and server ingestion. Health Connect categories still need
-validation on a phone with populated records.
+pause/resume. Sync history checks covered importing existing queued batches,
+manual and background job entries, opening actual app metadata records,
+loading additional record pages, denied-source summaries, Android Back
+navigation, and preserving history after a process restart. The current checks
+passed 70 Android unit tests and 19 TypeScript tests; Android lint reported no
+errors. Automated checks cover archive retention and acknowledgements, queue
+recovery, ownership, permissions, and lifecycle routing. A real server upload
+was not part of this device check; server ingestion has separate tests. Health
+Connect categories still need validation on a phone with populated records.
 
 Further device validation should cover a real Android phone with populated usage and
 Health Connect data: skip login, complete local onboarding, collect in airplane
