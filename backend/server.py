@@ -1,5 +1,5 @@
 """FastAPI application. Run .venv/bin/python -m backend.server from the repo root."""
-import hashlib, hmac, io, json, os, secrets, shutil, smtplib, sqlite3, threading, time, uuid
+import hashlib, hmac, io, json, os, re, secrets, shutil, smtplib, sqlite3, sys, threading, time, uuid
 from contextlib import asynccontextmanager
 from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime, timedelta, timezone
@@ -13,10 +13,11 @@ from fastapi import FastAPI, Depends, HTTPException, UploadFile, File, Form, Res
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from PIL import Image, UnidentifiedImageError
-from .models import Signup, Login, Profile, TaskStatus, CheckIn, Feedback, PasswordChange, PlanAdjustment
+from .models import Signup, Login, Profile, TaskStatus, CheckIn, Feedback, PasswordChange, PlanAdjustment, PlanRegeneration, ProgressPhotoAnalysis
 from .cache import Cache
 from . import planning
 from .plan_updates import adjustment_window, merge_adjustment
+from . import progress as progress_service
 
 DATA = Path(os.getenv('FORMA_DATA_DIR', str(Path(__file__).parent / 'data'))).resolve()
 DATA.mkdir(parents=True,exist_ok=True)
@@ -52,6 +53,7 @@ def init_db():
         CREATE TABLE IF NOT EXISTS plan_preferences(id TEXT PRIMARY KEY, tenant TEXT REFERENCES accounts(id) ON DELETE CASCADE, text TEXT NOT NULL, action TEXT NOT NULL, days INTEGER NOT NULL, created TEXT NOT NULL);
         CREATE TABLE IF NOT EXISTS notifications(id TEXT PRIMARY KEY, tenant TEXT REFERENCES accounts(id) ON DELETE CASCADE, message TEXT, created TEXT, email_status TEXT);
         ''')
+        progress_service.init_db(con)
         job_columns = {r['name'] for r in con.execute('PRAGMA table_info(jobs)')}
         for column, declaration in [('action', "TEXT NOT NULL DEFAULT 'generate'"), ('start_date', 'TEXT'), ('days', 'INTEGER NOT NULL DEFAULT 28'), ('preferences_id', 'TEXT')]:
             if column not in job_columns:
@@ -60,6 +62,8 @@ def init_db():
         if not con.execute('SELECT id FROM accounts WHERE email=?',(email,)).fetchone():
             con.execute('INSERT INTO accounts VALUES(?,?,?,?,?,?)',(str(uuid.uuid4()),email,'Administrator',hash_password(os.getenv('ADMIN_PASSWORD','admin123')),'admin',now()))
         con.execute("UPDATE jobs SET status='failed',message='Server restarted during planning. Please retry.',updated=? WHERE status IN ('queued','generating','reviewing','revising')",(now(),))
+    from .mcp_auth import init_auth_db
+    init_auth_db(sys.modules[__name__])
 
 def hash_password(value):
     salt=secrets.token_hex(16)
@@ -111,6 +115,8 @@ def load_plan(tenant):
     return value
 
 def check_date(value):
+    if not isinstance(value,str) or not re.fullmatch(r'\d{4}-\d{2}-\d{2}',value):
+        raise HTTPException(422,'Invalid date. Use YYYY-MM-DD.')
     try: return date.fromisoformat(value).isoformat()
     except ValueError: raise HTTPException(422,'Invalid date. Use YYYY-MM-DD.') from None
 
@@ -194,7 +200,7 @@ def run_job(identifier, tenant, profile, action='generate', start=None, count=28
                         con.execute('DELETE FROM statuses WHERE tenant=? AND date=? AND task_id=?', (tenant,row['date'],row['task_id']))
         cache.delete(tenant,'plan')
         cache.set(tenant,'plan',plan)
-        message = 'Your reviewed four-week plan is ready.' if action == 'generate' else f'Your plan has been {"refined" if action == "refine" else "extended"} for {count} days: {generated["start_date"]} to {generated["end_date"]}.'
+        message = f'Your reviewed {count}-day plan is ready.' if action == 'generate' else f'Your plan has been {"refined" if action == "refine" else "extended"} for {count} days: {generated["start_date"]} to {generated["end_date"]}.'
         notification(tenant, message)
         report('completed', message)
     except planning.PlanningError as e:
@@ -203,7 +209,7 @@ def run_job(identifier, tenant, profile, action='generate', start=None, count=28
         report('failed', 'Planning could not finish. Your previous plan is still available and your preference note is saved. Please retry.')
 
 
-def queue_job(account, action='generate', adjustment=None, preferences_id=None):
+def queue_job(account, action='generate', adjustment=None, preferences_id=None, days=None):
     tenant = account['id']
     profile = load_profile(tenant)
     if not profile:
@@ -211,7 +217,7 @@ def queue_job(account, action='generate', adjustment=None, preferences_id=None):
     if os.getenv('LLM_PROVIDER','openai') not in planning.PROVIDERS:
         raise HTTPException(503, 'Configured planning provider is unavailable.')
     current_plan = load_plan(tenant)
-    count = adjustment.days if adjustment else 28
+    count = adjustment.days if adjustment else (days if days is not None else 28)
     start = today(profile['timezone'])
     if action != 'generate':
         try:
@@ -236,10 +242,16 @@ def queue_job(account, action='generate', adjustment=None, preferences_id=None):
 
 @asynccontextmanager
 async def lifespan(app):
+    global mcp
     init_db()
-    yield
+    # The SDK session manager runs once per application lifecycle. A fresh
+    # transport also supports server restarts and isolated TestClient fixtures.
+    mcp=create_mcp(sys.modules[__name__])
+    mcp_transport.app=mcp.streamable_http_app()
+    async with mcp.session_manager.run():
+        yield
 
-app=FastAPI(title='Forma Phase 1',version='1.0.0',lifespan=lifespan)
+app=FastAPI(title='Forma',version='2.0.0',lifespan=lifespan)
 app.add_middleware(CORSMiddleware,allow_origins=[os.getenv('FRONTEND_URL','http://localhost:5173')],allow_credentials=True,allow_methods=['GET','POST','PUT','DELETE'],allow_headers=['Content-Type'])
 
 @app.get('/api/health')
@@ -302,6 +314,14 @@ def password(data:PasswordChange,account=Depends(current)):
 def start_plan(account=Depends(member)):
     return queue_job(account)
 
+def regenerate_for_days(days,account):
+    request=PlanRegeneration(days=days)
+    return queue_job(account,days=request.days)
+
+@app.post('/api/plans/regenerate',status_code=202)
+def regenerate_plan(data:PlanRegeneration,account=Depends(member)):
+    return regenerate_for_days(data.days,account)
+
 @app.post('/api/plans/refine',status_code=202)
 def refine_plan(data:PlanAdjustment,account=Depends(member)):
     return queue_job(account,'refine',data)
@@ -322,7 +342,7 @@ def retry_job(identifier:str,account=Depends(member)):
         if row['status']!='failed': raise HTTPException(409,'Only failed jobs can be retried.')
         preference=con.execute('SELECT text FROM plan_preferences WHERE id=? AND tenant=?',(row['preferences_id'],account['id'])).fetchone() if row['preferences_id'] else None
     adjustment=PlanAdjustment(days=row['days'],preferences=preference['text']) if preference else None
-    return queue_job(account,row['action'],adjustment,row['preferences_id'])
+    return queue_job(account,row['action'],adjustment,row['preferences_id'],days=row['days'])
 
 @app.get('/api/jobs/{identifier}')
 def job(identifier:str,account=Depends(member)):
@@ -348,20 +368,41 @@ def progress(account=Depends(member)):
         history.append({'id':row['id'],'start_date':old_plan['start_date'],'end_date':old_plan['end_date'],'completed':completed,'skipped':skipped,'total':total,'adherence':round(completed/max(1,total)*100)})
     return {'statuses':statuses,'checkins':checkins,'history':history}
 
+@app.get('/api/tracking/{selected_date}')
+def day_tracking(selected_date:str|None=None,account=Depends(member)):
+    return progress_service.day_tracking(sys.modules[__name__],account,selected_date)
+
+@app.get('/api/progress/summary')
+def progress_summary(start_date:str|None=None,end_date:str|None=None,account=Depends(member)):
+    return progress_service.progress_summary(sys.modules[__name__],account,start_date,end_date)
+
+@app.post('/api/progress/photos/analyze')
+def analyze_progress(data:ProgressPhotoAnalysis,account=Depends(member)):
+    selected=data.date or today((load_profile(account['id']) or {}).get('timezone','Asia/Kolkata')).isoformat()
+    tracking=progress_service.analyze_photos(sys.modules[__name__],account,selected)
+    return {'photo_review':tracking['photo_review'],'tracking':tracking}
+
+@app.get('/api/mcp/info')
+def mcp_info(account=Depends(member)):
+    return {'url':os.getenv('FORMA_PUBLIC_URL','http://127.0.0.1:8000').rstrip('/')+'/mcp','oauth':True}
+
 @app.put('/api/tasks/status')
 def task_status(data:TaskStatus,account=Depends(member)):
     selected=check_date(data.date)
-    plan=load_plan(account['id'])
-    day=next((d for d in (plan or {}).get('days',[]) if d['date']==selected),None)
-    if not day or data.task_id not in [t['id'] for t in day['tasks']]: raise HTTPException(404,'Task not found in your plan.')
-    with connect() as con: con.execute('INSERT OR REPLACE INTO statuses VALUES(?,?,?,?)',(account['id'],selected,data.task_id,data.status))
-    return {'saved':True}
+    with connect() as con:
+        con.execute('BEGIN IMMEDIATE')
+        row=con.execute('SELECT data FROM plans WHERE tenant=?',(account['id'],)).fetchone()
+        plan=json.loads(row['data']) if row else {}
+        day=next((d for d in plan.get('days',[]) if d['date']==selected),None)
+        if not day or data.task_id not in [t['id'] for t in day['tasks']]: raise HTTPException(404,'Task not found in your plan.')
+        con.execute('INSERT OR REPLACE INTO statuses VALUES(?,?,?,?)',(account['id'],selected,data.task_id,data.status))
+    return {'saved':True,'tracking':day_tracking(selected,account)}
 
 @app.put('/api/checkins')
 def checkin(data:CheckIn,account=Depends(member)):
     check_date(data.date)
     with connect() as con: con.execute('INSERT OR REPLACE INTO checkins VALUES(?,?,?,?,?)',(account['id'],data.date,data.water,data.weight,data.notes))
-    return {'saved':True}
+    return {'saved':True,'tracking':day_tracking(data.date,account)}
 
 @app.post('/api/feedback',status_code=201)
 def feedback(data:Feedback,account=Depends(member)):
@@ -370,13 +411,20 @@ def feedback(data:Feedback,account=Depends(member)):
 
 @app.post('/api/media',status_code=201)
 async def upload(file:UploadFile=File(...),kind:str=Form(...),selected_date:str=Form(default=''),account=Depends(member)):
-    if kind not in ('equipment','body','progress'): raise HTTPException(422,'Invalid image purpose.')
-    selected_date=check_date(selected_date) if selected_date else today().isoformat()
     raw=await file.read(10*1024*1024+1)
     await file.close()
+    return upload_image_bytes(raw,kind,account,selected_date)
+
+def upload_progress_bytes(raw,account,selected_date=None):
+    return upload_image_bytes(raw,'progress',account,selected_date)
+
+def upload_image_bytes(raw,kind,account,selected_date=None):
+    if kind not in ('equipment','body','progress'): raise HTTPException(422,'Invalid image purpose.')
+    selected_date=check_date(selected_date) if selected_date else today((load_profile(account['id']) or {}).get('timezone','Asia/Kolkata')).isoformat()
     if len(raw)>10*1024*1024: raise HTTPException(413,'Images must be smaller than 10 MB.')
     try:
         image=Image.open(io.BytesIO(raw))
+        if image.format not in ('JPEG','PNG','WEBP'): raise ValueError('Unsupported image format')
         if image.width*image.height>30_000_000: raise ValueError('Image dimensions too large')
         from PIL import ImageOps
         image=ImageOps.exif_transpose(image).convert('RGB')
@@ -385,8 +433,14 @@ async def upload(file:UploadFile=File(...),kind:str=Form(...),selected_date:str=
     identifier=str(uuid.uuid4());filename=identifier+'.jpg'
     directory=DATA/'media'/account['id'];directory.mkdir(parents=True,exist_ok=True)
     image.save(directory/filename,'JPEG',quality=88)
-    with connect() as con: con.execute('INSERT INTO media VALUES(?,?,?,?,?,?)',(identifier,account['id'],kind,selected_date,filename,now()))
-    return {'id':identifier,'kind':kind,'date':selected_date,'url':'/api/media/'+identifier}
+    try:
+        with connect() as con: con.execute('INSERT INTO media VALUES(?,?,?,?,?,?)',(identifier,account['id'],kind,selected_date,filename,now()))
+    except Exception:
+        (directory/filename).unlink(missing_ok=True)
+        raise
+    result={'id':identifier,'kind':kind,'date':selected_date,'url':'/api/media/'+identifier}
+    if kind=='progress': result['tracking']=day_tracking(selected_date,account)
+    return result
 
 @app.get('/api/media')
 def media(account=Depends(member)):
@@ -457,6 +511,13 @@ def delete_user(identifier:str,account=Depends(admin)):
     shutil.rmtree(DATA/'media'/identifier,ignore_errors=True)
     shutil.rmtree(DATA/'cache'/identifier,ignore_errors=True)
     return {'saved':True}
+
+from .mcp_auth import install_auth_routes
+from .mcp_server import create_mcp, MCPAuthMiddleware
+install_auth_routes(app,sys.modules[__name__])
+mcp=create_mcp(sys.modules[__name__])
+mcp_transport=MCPAuthMiddleware(mcp.streamable_http_app(),sys.modules[__name__])
+app.mount('/mcp',mcp_transport)
 
 if __name__=='__main__':
     import uvicorn

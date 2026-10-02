@@ -45,6 +45,12 @@ class CheckIn(BaseModel):
 class Feedback(BaseModel):
     text: str = Field(min_length=1, max_length=4000)
 
+class PlanRegeneration(BaseModel):
+    days: int = Field(default=28, ge=1, le=28, strict=True)
+
+class ProgressPhotoAnalysis(BaseModel):
+    date: str | None = None
+
 class PlanAdjustment(BaseModel):
     days: int = Field(default=7, ge=1, le=28, strict=True)
     preferences: str = Field(min_length=1, max_length=4000)

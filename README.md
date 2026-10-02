@@ -1,6 +1,8 @@
-# Forma — Phase 1
+# Forma — Exercise planner
 
 React frontend, FastAPI backend, SQLite database, tenant-scoped local media, and Redis with a persistent file-cache fallback.
+
+Phase 2 adds authenticated MCP access, daily progress photos, date-level tracking, and adherence feedback.
 
 ## Start
 
@@ -48,7 +50,66 @@ Admin credentials are `admin@example.com` / `admin123`, as requested. `ADMIN_EMA
 - The sidebar toggle switches between the full menu and an icon rail, remembering the desktop choice in the browser. On mobile, the full menu opens over the page and closes after navigation, an outside click, or Escape. Menu icons retain accessible labels and tooltips.
 - Database reads/writes and media endpoints derive ownership from the authenticated session. Different tenants cannot access one another’s data. Passwords use salted PBKDF2 hashes, and sessions use opaque HttpOnly cookies with hashed tokens stored in SQLite.
 
-Daily progress photos are stored as a private journal; AI photo-progress analysis and MCP are **Phase 2**, outside this implementation.
+## Phase 2: MCP and photo progress
+
+Members can view tracking for any date, upload several progress photos for today or a selected date, and mark specific meals/workouts completed or skipped. Task and photo updates return current tracking and adherence feedback. **Analyze photos** explicitly requests saved visual feedback from the configured AI provider, using the selected photos, earlier photos when available, and plan adherence. Analysis can take a moment and uses the provider API; ordinary task updates do not call the AI provider. Feedback describes visible observations with uncertainty rather than inferring body measurements or medical diagnoses.
+
+The backend serves the official Python MCP SDK over Streamable HTTP at `http://127.0.0.1:8000/mcp`. All tools act on the authenticated member's own data. Browser login cookies and administrator accounts cannot authenticate MCP requests.
+
+| Tool | Inputs and result |
+| --- | --- |
+| `regenerate_plan` | Integer `days` from 1 through 28; starts today and returns a queued planning job. |
+| `get_current_day_plan` | Today's plan, task IDs/statuses, photos, and feedback in the profile timezone. |
+| `get_progress_summary` | Optional inclusive `start_date` / `end_date`; adherence totals and tracking summary. |
+| `mark_task` | `task_id`, `status` (`completed` or `skipped`), optional `selected_date`; updated tracking. |
+| `get_date_tracking` | `selected_date` in `YYYY-MM-DD`; detailed dated tracking. |
+| `upload_progress_photo` | Plain `image_base64`, optional `selected_date`; saves an image up to 10 MiB and returns tracking. |
+| `analyze_progress_photos` | Optional `selected_date`; requests and saves visual progress feedback. |
+| `get_planning_job` | `job_id`; polls the member's asynchronous planning job. |
+
+Dates use `YYYY-MM-DD`; omitted dates use the member profile timezone. Regeneration replaces the published plan only after review succeeds and archives the previous version. Poll the returned job until it completes, then fetch the current plan.
+
+### Local agent connection
+
+Sign in to a member account, open **Settings → Agent connections**, and create a personal access token. Copy it immediately; only its hash is stored. Tokens expire and can be revoked in Settings. Credentials remain outside frontend bundles.
+
+For Claude Code using HTTP, run the backend and add it as a project-local MCP server:
+
+```sh
+read -rsp 'Forma token: ' FORMA_MCP_TOKEN; export FORMA_MCP_TOKEN
+claude mcp add --transport http forma http://127.0.0.1:8000/mcp \
+  --header "Authorization: Bearer $FORMA_MCP_TOKEN"
+```
+
+Claude stores configured headers in its MCP configuration; keep that file private. Agents supporting stdio can instead launch the included proxy with credentials supplied through the process environment:
+
+```json
+{
+  "mcpServers": {
+    "forma": {
+      "command": "/absolute/path/to/exercise_planner/.venv/bin/python",
+      "args": ["-m", "backend.mcp_server", "--stdio"],
+      "cwd": "/absolute/path/to/exercise_planner",
+      "env": {
+        "FORMA_MCP_URL": "http://127.0.0.1:8000/mcp",
+        "FORMA_MCP_TOKEN": "YOUR_PERSONAL_ACCESS_TOKEN"
+      }
+    }
+  }
+}
+```
+
+For clients without a `cwd` configuration option, add `PYTHONPATH` set to the repository's absolute path in `env`. The stdio process forwards requests to the running backend; start the backend first. It creates no separate database, and stdout contains only MCP messages.
+
+### Remote ChatGPT / Claude connection
+
+Remote hosted agents require a reachable HTTPS backend; a localhost URL is only usable by local agents. Deploy behind HTTPS and set `FORMA_PUBLIC_URL=https://your-backend.example` and `COOKIE_SECURE=true`. Configure your reverse proxy to route `/mcp`, `/oauth/*`, and `/.well-known/*` to FastAPI. Use `https://your-backend.example/mcp` as the remote MCP URL in a client that supports custom MCP connectors.
+
+The service advertises protected-resource and authorization-server discovery, supports dynamic client registration, and serves a Forma login/consent page. Sign in as a member and explicitly approve the client. Authorization uses exact registered redirects, authorization-code flow with S256 PKCE, and resource-bound credentials. Access tokens last one hour. Refresh tokens rotate and expire after 30 days; reuse revokes the connection. Settings lists OAuth connections and can revoke them immediately. Client registration supports public clients (`none`) and confidential clients (`client_secret_post` / `client_secret_basic`). Feature availability and connector setup depend on the agent product and account; the server does not deploy itself or enable remote account features.
+
+Session-authenticated management endpoints are `GET/POST /api/mcp/tokens`, `DELETE /api/mcp/tokens/{id}`, `GET /api/mcp/connections`, and `DELETE /api/mcp/connections/{id}`. Token creation accepts `{"name":"My agent","expires_days":90}` with a 1–365 day expiry and shows the secret once. MCP requests always use `Authorization: Bearer <token>`.
+
+The transport follows the official [Python SDK v1 documentation](https://py.sdk.modelcontextprotocol.io/v1/) and [MCP authorization specification](https://modelcontextprotocol.io/specification/2025-06-18/basic/authorization). Local Claude configuration follows the [Claude Code MCP guide](https://code.claude.com/docs/en/mcp).
 
 ## Exercise and food guides
 

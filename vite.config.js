@@ -1,4 +1,7 @@
 import { defineConfig } from "vite";
 export default defineConfig({
-  server: { proxy: { "/api": "http://127.0.0.1:8000" } },
+  server: {
+    proxy: { "/api": "http://127.0.0.1:8000", "/mcp": "http://127.0.0.1:8000" },
+    watch: { ignored: ["**/.venv/**", "**/backend/data/**"] },
+  },
 });

@@ -38,6 +38,8 @@ import { api, localDate, dateObject, labelDate, shiftDate } from "./api";
 import PlanCards from "./PlanCards";
 import GuidePage, { TaskGuides } from "./Guide";
 import StaticPages from "./StaticPages";
+import ProgressFeedback from "./ProgressFeedback";
+import McpConnections from "./McpConnections";
 import { guideRoute } from "./library";
 import { MACRO_LABELS } from "./quantities";
 import "./style.css";
@@ -132,6 +134,7 @@ function App() {
     return () => window.removeEventListener("keydown", close);
   }, [mobileSidebarOpen]);
   const [history, setHistory] = useState([]);
+  const [trackingRevision, setTrackingRevision] = useState(0);
   const [preferences, setPreferences] = useState([]),
     [adjustmentDays, setAdjustmentDays] = useState(7);
   const [account, setAccount] = useState(null),
@@ -361,15 +364,22 @@ function App() {
       toast("Your preferences are saved. Your plan update is being reviewed.");
     });
   }
-  async function uploadFiles(kind, selectedFiles) {
+  async function uploadFiles(kind, selectedFiles, selectedDate = date) {
     for (const file of selectedFiles) {
       const body = new FormData();
       body.append("file", file);
       body.append("kind", kind);
-      body.append("selected_date", date);
-      await api("/media", { method: "POST", body });
+      body.append("selected_date", selectedDate);
+      const uploaded = await api("/media", { method: "POST", body });
+      setMedia((items) => [uploaded, ...items]);
+      if (kind === "progress") setTrackingRevision((value) => value + 1);
     }
     setMedia(await api("/media"));
+  }
+  async function removePhoto(id) {
+    await api("/media/" + id, { method: "DELETE" });
+    setMedia(await api("/media"));
+    setTrackingRevision((value) => value + 1);
   }
   async function submitOnboarding(e) {
     e.preventDefault();
@@ -444,13 +454,18 @@ function App() {
     (m) => m.kind === "progress" && m.date === date,
   );
   async function mark(task, status) {
+    const selectedDate = date;
     await action(async () => {
-      await api("/tasks/status", {
-        method: "PUT",
-        body: { date, task_id: task.id, status },
-      });
-      setStatuses((s) => ({ ...s, [statusKey(date, task.id)]: status }));
+      await saveTaskStatus(task, status, selectedDate);
     });
+  }
+  async function saveTaskStatus(task, status, selectedDate) {
+    await api("/tasks/status", {
+      method: "PUT",
+      body: { date: selectedDate, task_id: task.id, status },
+    });
+    setStatuses((s) => ({ ...s, [statusKey(selectedDate, task.id)]: status }));
+    setTrackingRevision((value) => value + 1);
   }
   async function saveWater(value) {
     await action(async () => {
@@ -462,6 +477,7 @@ function App() {
       };
       await api("/checkins", { method: "PUT", body });
       setCheckins((c) => ({ ...c, [date]: body }));
+      setTrackingRevision((value) => value + 1);
     });
   }
   const visibleTasks = tasks.filter((t) =>
@@ -1414,19 +1430,53 @@ function App() {
                         </section>
                       )}
                       <section className="progress-page">
-                        <h2>Progress photos</h2>
-                        <p className="muted">
-                          Your private photo journal. Photo analysis is part of
-                          Phase 2.
-                        </p>
+                        <div className="section-heading">
+                          <div>
+                            <h2>Progress photos</h2>
+                            <p className="muted">
+                              Your private photo journal and feedback from your
+                              saved progress.
+                            </p>
+                          </div>
+                          <button
+                            className="outline"
+                            onClick={() => {
+                              setDate(localDate());
+                              setModal("checkin");
+                            }}
+                          >
+                            <Upload size={15} /> Add today’s photos
+                          </button>
+                        </div>
+                        <div className="journal-date">
+                          <label>
+                            Feedback date
+                            <input
+                              type="date"
+                              value={date}
+                              onChange={(event) =>
+                                event.target.value &&
+                                setDate(event.target.value)
+                              }
+                            />
+                          </label>
+                          <button
+                            className="text-button"
+                            onClick={() => setModal("checkin")}
+                          >
+                            Add photos for selected date <Plus size={14} />
+                          </button>
+                        </div>
                         <PhotoGrid
                           photos={media.filter((m) => m.kind === "progress")}
-                          remove={(id) =>
-                            action(async () => {
-                              await api("/media/" + id, { method: "DELETE" });
-                              setMedia(await api("/media"));
-                            })
-                          }
+                          remove={(id) => action(() => removePhoto(id))}
+                        />
+                        <ProgressFeedback
+                          key={`${account.id}/${date}`}
+                          date={date}
+                          revision={trackingRevision}
+                          photoCount={currentPhotos.length}
+                          saving={busy}
                         />
                       </section>
                     </>
@@ -1713,23 +1763,13 @@ function App() {
                             </div>
                           </div>
                         </section>
-                        <section className="insight">
-                          <span className="insight-label">
-                            <Sparkles size={15} />A NOTE FOR YOU
-                          </span>
-                          <h3>
-                            {overall >= 75
-                              ? "Your rhythm is taking shape."
-                              : "Small wins still count."}
-                          </h3>
-                          <p>{feedbackText}</p>
-                          <div>
-                            <span className="leaf-circle">
-                              <Leaf size={16} />
-                            </span>
-                            Your wellness companion
-                          </div>
-                        </section>
+                        <ProgressFeedback
+                          key={`${account.id}/${date}`}
+                          date={date}
+                          revision={trackingRevision}
+                          photoCount={currentPhotos.length}
+                          saving={busy}
+                        />
                         <section className="photo-card">
                           <div className="photo-icon">
                             <Upload size={20} />
@@ -1750,8 +1790,7 @@ function App() {
                             photos={currentPhotos}
                             remove={(id) =>
                               action(async () => {
-                                await api("/media/" + id, { method: "DELETE" });
-                                setMedia(await api("/media"));
+                                await removePhoto(id);
                               })
                             }
                           />
@@ -2280,18 +2319,7 @@ function App() {
                   disabled={busy}
                   onClick={() =>
                     action(async () => {
-                      await api("/tasks/status", {
-                        method: "PUT",
-                        body: {
-                          date,
-                          task_id: selectedTask.id,
-                          status: "completed",
-                        },
-                      });
-                      setStatuses((s) => ({
-                        ...s,
-                        [statusKey(date, selectedTask.id)]: "completed",
-                      }));
+                      await saveTaskStatus(selectedTask, "completed", date);
                       setModal(null);
                     })
                   }
@@ -2330,9 +2358,10 @@ function App() {
                 onSubmit={(e) => {
                   e.preventDefault();
                   const values = new FormData(e.currentTarget);
+                  const selectedDate = date;
                   action(async () => {
                     const body = {
-                      date,
+                      date: selectedDate,
                       water,
                       weight: values.get("weight")
                         ? Number(values.get("weight"))
@@ -2340,11 +2369,12 @@ function App() {
                       notes: values.get("notes"),
                     };
                     await api("/checkins", { method: "PUT", body });
-                    setCheckins((s) => ({ ...s, [date]: body }));
+                    setCheckins((s) => ({ ...s, [selectedDate]: body }));
+                    setTrackingRevision((value) => value + 1);
                     const photos = values
                       .getAll("photos")
                       .filter((f) => f.size);
-                    await uploadFiles("progress", photos);
+                    await uploadFiles("progress", photos, selectedDate);
                     setModal(null);
                     toast("Your daily check-in is saved.");
                   });
@@ -2524,6 +2554,7 @@ function App() {
                     >
                       Change password <KeyRound size={16} />
                     </button>
+                    {!impersonating && <McpConnections />}
                     <div className="saved-preferences">
                       <h3>Planning preferences</h3>
                       {preferences.length ? (
