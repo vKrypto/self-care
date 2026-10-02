@@ -1,12 +1,14 @@
 {
   "name": "forma-data-sync",
-  "version": "0.3.3",
+  "version": "0.3.4",
   "private": true,
   "scripts": {
     "start": "react-native start",
     "android": "react-native run-android",
-    "build:apk": "cd android && ./gradlew assemblePreview",
-    "build:apk:lan": "cd android && ./gradlew assembleLan",
+    "build:apk": "cd android && ./gradlew assemblePreview && cd .. && node scripts/export-apks.mjs preview",
+    "build:apk:lan": "cd android && ./gradlew assembleLan && cd .. && node scripts/export-apks.mjs lan",
+    "export:apk": "node scripts/export-apks.mjs preview",
+    "export:apk:lan": "node scripts/export-apks.mjs lan",
     "android:preview": "react-native run-android --mode preview --no-packager",
     "android:lan": "react-native run-android --mode lan --no-packager",
     "typecheck": "tsc --noEmit",

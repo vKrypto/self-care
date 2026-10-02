@@ -256,7 +256,7 @@ npm ci
 npm run build:apk
 ```
 
-The generated file is `data_sync/native_app/android/app/build/outputs/apk/preview/app-preview.apk` relative to the repository root. It includes its JavaScript bundle, runs without Metro, and is signed with a local debug key for testing. Local collection needs no server; enter a reachable **HTTPS** server URL when connecting this preview app. Production release builds need your own signing configuration.
+The script exports the universal APK at `data_sync/apk/forma-data-sync-preview.apk`, smaller APKs for each CPU architecture, and SHA-256 checksums. They include the JavaScript bundle, run without Metro, and are signed with a local debug key for testing. Local collection needs no server; enter a reachable **HTTPS** server URL when connecting this preview app. Production release builds need your own signing configuration. See [Choose a smaller APK](data_sync/README.md#choose-a-smaller-apk) for download links and device architecture checks.
 
 Start the companion server instead of the regular backend entry point when using Android exports. Run these commands from the repository root:
 
@@ -268,7 +268,7 @@ npm run build
 
 The companion serves `/api/native/*` and the built dashboard from one origin, using the existing database and accounts. Expose it over HTTPS for the preview app and set `COOKIE_SECURE=true` for that deployment. The development build supports local HTTP and uses Metro.
 
-For a phone on the same trusted LAN, `npm run build:apk:lan` from `data_sync/native_app` creates a standalone LAN test APK at `android/app/build/outputs/apk/lan/app-lan.apk`. This variant accepts HTTP to private IPv4 addresses such as `http://192.168.1.50:8000`, runs without Metro, and updates the preview app while preserving local records. HTTP does not encrypt credentials or uploaded data; regular preview and release builds still require HTTPS. Keep `COOKIE_SECURE=false` for local HTTP.
+For a phone on the same trusted LAN, `npm run build:apk:lan` from `data_sync/native_app` exports `data_sync/apk/forma-data-sync-lan-preview.apk` and architecture-specific versions. Version `0.3.4` reduces the previous 51.98 MB download to 7.34 MB for ARM64, 7.45 MB for x86_64, or 19.72 MB for universal compatibility. This variant accepts HTTP to private IPv4 addresses such as `http://192.168.1.50:8000`, runs without Metro, and updates the preview app while preserving local records. HTTP does not encrypt credentials or uploaded data; regular preview and release builds still require HTTPS. Keep `COOKIE_SECURE=false` for local HTTP.
 
 See [`data_sync/README.md`](data_sync/README.md) for prerequisites, SDK setup, Windows commands, APK installation, and troubleshooting. See the [native app README](data_sync/native_app/README.md) for available data sources, permissions, API details, and verification commands.
 

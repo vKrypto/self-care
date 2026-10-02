@@ -8,6 +8,10 @@ source files do not need modification. iOS is deferred.
 For tool installation, platform-specific build commands, and APK installation,
 see the [Android APK build guide](../README.md). The generated standalone test
 APK is available at [`../apk/forma-data-sync-preview.apk`](../apk/forma-data-sync-preview.apk).
+Version `0.3.4` also exports smaller APKs for each architecture. See
+[Choose a smaller APK](../README.md#choose-a-smaller-apk): the ARM64 LAN download
+is 7.34 MB, the connected x86_64 test device's download is 7.45 MB, and the
+universal LAN download is 19.72 MB, reduced from 51.98 MB.
 
 ## Run the server
 
@@ -46,7 +50,7 @@ For local HTTP without Metro, build and install the **LAN preview**:
 ```bash
 # From data_sync/native_app
 npm run build:apk:lan
-adb install -r android/app/build/outputs/apk/lan/app-lan.apk
+adb install -r ../apk/forma-data-sync-lan-preview.apk
 ```
 
 Enter `http://<computer-LAN-IP>:8000` as the server origin, then your existing
@@ -60,7 +64,8 @@ The normal preview and release still require HTTPS.
 The LAN build has the same application ID and signing key as preview, preserving
 local records when installed as an update. The generated download is
 [`../apk/forma-data-sync-lan-preview.apk`](../apk/forma-data-sync-lan-preview.apk).
-For Windows, run `gradlew.bat assembleLan` from the `android` folder.
+For Windows, run `gradlew.bat assembleLan` and
+`node ..\scripts\export-apks.mjs lan` from the `android` folder.
 
 At the user's request, this LAN test build prefills `http://192.168.100.8:8000`,
 `admin@example.com`, and `admin123`. These editable test defaults are compiled
@@ -108,7 +113,7 @@ Create the self-contained preview APK, starting from the repository root:
 cd data_sync/native_app
 npm ci
 npm run build:apk
-adb install -r android/app/build/outputs/apk/preview/app-preview.apk
+adb install -r ../apk/forma-data-sync-preview.apk
 ```
 
 If already in this folder, omit `cd data_sync/native_app`. Windows users should
@@ -122,6 +127,21 @@ alongside the development app. Local collection needs no server. Connecting the
 preview app requires an HTTPS server URL; use the LAN preview or the development
 build above for a local HTTP server. The preview key is for testing;
 configure your own signing key when distributing a release.
+
+The build scripts export all APKs and checksums into `data_sync/apk`. Prefer the
+file matching your device's first ABI from `adb shell getprop ro.product.cpu.abilist`:
+`forma-data-sync-preview-arm64-v8a.apk`, `-armeabi-v7a.apk`, `-x86.apk`, or
+`-x86_64.apk`. LAN builds use the prefix `forma-data-sync-lan-preview`.
+The unsuffixed filename is universal. Installing an update with the same signing
+key preserves the app's data and session.
+
+Release, preview, and LAN builds enable R8 optimization and resource shrinking;
+native libraries are compressed in APKs and extracted during installation.
+Health Connect record and unit public members retain their names because the
+collector serializes them through reflection. WorkManager and React Native
+consumer rules preserve worker constructors and native bridge entry points.
+Use `npm run export:apk` / `npm run export:apk:lan` to refresh exported APKs
+after a direct Gradle build.
 
 ## Flow
 
@@ -350,8 +370,16 @@ signing compatibility, test defaults, and variant-specific transport settings
 were also checked. Updating to `0.3.3-lan-preview` retained the active collection
 and upload settings; the native dashboard had no embedded website, and tapping
 **Open website** launched the device's separate browser at the configured LAN
-address. Health
-Connect categories still need validation on a phone with populated records.
+address. Updating to the optimized `0.3.4-lan-preview` x86_64 APK preserved the
+signed-in session, collection/upload settings, and archived history. The device
+check opened retained raw records, collected a new local batch, uploaded queued
+batches to the LAN server, and displayed their server acknowledgements in
+collection details. Both optimized preview variants passed Android lint with no
+errors. All ten exported APKs passed signature, checksum, architecture, and
+Hermes bundle checks; the signing certificate matches the earlier installed
+preview. The minified DEX audit confirmed that Health Connect public serializer
+members, native bridge methods, and persisted worker class names remain intact.
+Health Connect categories still need validation on a phone with populated records.
 
 Further device validation should cover a real Android phone with populated usage and
 Health Connect data: skip login, complete local onboarding, collect in airplane

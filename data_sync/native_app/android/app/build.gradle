@@ -2,6 +2,9 @@ apply plugin: 'com.android.application'
 apply plugin: 'org.jetbrains.kotlin.android'
 apply plugin: 'com.facebook.react'
 
+def apkArchitectures = (project.findProperty('reactNativeArchitectures') ?: 'armeabi-v7a,arm64-v8a,x86,x86_64')
+    .split(',').collect { it.trim() }.findAll { it }
+
 react {
     autolinkLibrariesWithApp()
     // Only debug loads JavaScript from Metro. Preview and LAN APKs include their
@@ -18,8 +21,8 @@ android {
         applicationId 'com.forma.datasync'
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 6
-        versionName '0.3.3'
+        versionCode 7
+        versionName '0.3.4'
         buildConfigField 'boolean', 'ALLOW_LAN_HTTP', 'false'
         buildConfigField 'String', 'DEFAULT_SERVER_URL', '""'
         buildConfigField 'String', 'DEFAULT_EMAIL', '""'
@@ -29,7 +32,8 @@ android {
         debug { }
         // Release APKs are unsigned until deployment signing is configured.
         release {
-            minifyEnabled false
+            minifyEnabled true
+            shrinkResources true
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
         preview {
@@ -52,6 +56,21 @@ android {
             buildConfigField 'String', 'DEFAULT_EMAIL', '"admin@example.com"'
             buildConfigField 'String', 'DEFAULT_PASSWORD', '"admin123"'
             resValue 'string', 'app_name', 'Forma Data Sync LAN Preview'
+        }
+    }
+    splits {
+        abi {
+            enable true
+            reset()
+            include(*apkArchitectures)
+            universalApk true
+        }
+    }
+    packaging {
+        jniLibs {
+            // Android extracts these at installation; compressing them reduces
+            // APK downloads while retaining the same native code on the device.
+            useLegacyPackaging = true
         }
     }
     compileOptions {

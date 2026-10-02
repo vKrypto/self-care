@@ -15,6 +15,40 @@ Its checksum is in
 [`apk/forma-data-sync-preview.apk.sha256`](apk/forma-data-sync-preview.apk.sha256).
 These are local build artifacts and are excluded from Git.
 
+### Choose a smaller APK
+
+Version `0.3.4` builds a separate APK for each CPU architecture, plus a universal
+APK. The LAN builds have these measured download sizes:
+
+| Device architecture | APK | Size |
+| --- | --- | --- |
+| ARM64 (`arm64-v8a`) | [ARM64 LAN APK](apk/forma-data-sync-lan-preview-arm64-v8a.apk) | 7.34 MB |
+| 32-bit ARM (`armeabi-v7a`) | [ARM LAN APK](apk/forma-data-sync-lan-preview-armeabi-v7a.apk) | 6.79 MB |
+| 64-bit x86 (`x86_64`) | [x86_64 LAN APK](apk/forma-data-sync-lan-preview-x86_64.apk) | 7.45 MB |
+| 32-bit x86 (`x86`) | [x86 LAN APK](apk/forma-data-sync-lan-preview-x86.apk) | 7.76 MB |
+| All four architectures | [Universal LAN APK](apk/forma-data-sync-lan-preview.apk) | 19.72 MB |
+
+Sizes use decimal MB. The previous universal APK was 51.98 MB. The connected
+Android test device uses `x86_64`; its APK is about 86% smaller. To identify your
+own phone's supported architectures, run:
+
+```bash
+adb shell getprop ro.product.cpu.abilist
+```
+
+Choose the APK matching the first supported architecture. Use the universal APK
+if you do not know the architecture. HTTPS preview builds have the same suffixes
+without `lan-`, for example
+[`apk/forma-data-sync-preview-arm64-v8a.apk`](apk/forma-data-sync-preview-arm64-v8a.apk).
+Each exported APK has an adjacent `.apk.sha256` checksum file.
+
+All variants retain collection, background sync, and history. Release-derived
+builds remove unused code and resources and compress native libraries. Android
+extracts those libraries at installation, so installed storage use is greater
+than the APK download size. See Android's guides to
+[APK splits](https://developer.android.com/build/configure-apk-splits) and
+[reducing APK size](https://developer.android.com/topic/performance/reduce-apk-size).
+
 Copy the APK to an Android 8+ phone, open it, and allow that browser or file
 manager to install apps when Android prompts. Alternatively, enable USB
 debugging, connect the phone, and run this from the repository root:
@@ -131,12 +165,17 @@ npm run build:apk
 ```
 
 If you are already in `data_sync/native_app`, run only the last two commands.
-`build:apk` runs `assemblePreview` using the Gradle wrapper.
+`build:apk` runs `assemblePreview` using the Gradle wrapper, then exports the
+universal and four architecture-specific APKs with SHA-256 checksums.
 
 The resulting file is:
 
 ```text
-data_sync/native_app/android/app/build/outputs/apk/preview/app-preview.apk
+data_sync/apk/forma-data-sync-preview.apk
+data_sync/apk/forma-data-sync-preview-arm64-v8a.apk
+data_sync/apk/forma-data-sync-preview-armeabi-v7a.apk
+data_sync/apk/forma-data-sync-preview-x86.apk
+data_sync/apk/forma-data-sync-preview-x86_64.apk
 ```
 
 To build the standalone LAN test variant instead, run this from
@@ -144,8 +183,12 @@ To build the standalone LAN test variant instead, run this from
 
 ```bash
 npm run build:apk:lan
-adb install -r android/app/build/outputs/apk/lan/app-lan.apk
+adb install -r ../apk/forma-data-sync-lan-preview.apk
 ```
+
+For a smaller install, use the matching architecture-specific file instead,
+such as `../apk/forma-data-sync-lan-preview-arm64-v8a.apk` for ARM64 phones or
+`../apk/forma-data-sync-lan-preview-x86_64.apk` for the connected test device.
 
 Both standalone variants use `com.forma.datasync.preview`, so installing one
 updates the other rather than creating a second app. The LAN variant bundles
@@ -155,14 +198,22 @@ JavaScript and Hermes and does not need Metro. On Windows, use
 From the native app folder, install that new build with:
 
 ```bash
-adb install -r android/app/build/outputs/apk/preview/app-preview.apk
+adb install -r ../apk/forma-data-sync-preview.apk
 ```
 
-The preview build contains all four configured Android architectures
-(`armeabi-v7a`, `arm64-v8a`, `x86`, and `x86_64`) and uses application ID
-`com.forma.datasync.preview`. It is signed with your local Android debug key for
+The universal preview contains all four configured Android architectures
+(`armeabi-v7a`, `arm64-v8a`, `x86`, and `x86_64`); each smaller APK contains one.
+All preview APKs use application ID
+`com.forma.datasync.preview`. They are signed with your local Android debug key for
 testing. A production release needs your own signing configuration; the current
 `assembleRelease` output is unsigned.
+
+Gradle's original files are under `android/app/build/outputs/apk/<variant>/`,
+named `app-<architecture>-<variant>.apk` and `app-universal-<variant>.apk`.
+The exporter reads `output-metadata.json` to select the current build outputs,
+ignoring stale APK filenames. If you already built with Gradle directly, run
+`npm run export:apk` or `npm run export:apk:lan` from the native app folder to
+refresh the downloads and checksums without rebuilding.
 
 ### Build on Windows
 
@@ -178,8 +229,13 @@ cd data_sync\native_app
 npm ci
 cd android
 .\gradlew.bat assemblePreview
-adb install -r app\build\outputs\apk\preview\app-preview.apk
+node ..\scripts\export-apks.mjs preview
+adb install -r ..\..\apk\forma-data-sync-preview.apk
 ```
+
+For LAN HTTP, replace `assemblePreview` with `assembleLan`, export with
+`node ..\scripts\export-apks.mjs lan`, and install
+`..\..\apk\forma-data-sync-lan-preview.apk` or the matching smaller APK.
 
 ## Start the companion server
 
