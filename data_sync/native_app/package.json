@@ -1,0 +1,31 @@
+{
+  "name": "forma-data-sync",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "start": "react-native start",
+    "android": "react-native run-android",
+    "typecheck": "tsc --noEmit",
+    "test": "tsx --test tests/*.test.ts",
+    "bundle:android": "react-native bundle --platform android --dev false --entry-file index.js --bundle-output android/app/build/generated/verification/index.android.bundle --assets-dest android/app/build/generated/verification/assets"
+  },
+  "dependencies": {
+    "react": "19.2.3",
+    "react-native": "0.84.1",
+    "react-native-safe-area-context": "5.10.1",
+    "react-native-webview": "14.0.1"
+  },
+  "devDependencies": {
+    "@babel/core": "^7.25.2",
+    "@babel/runtime": "^7.25.0",
+    "@react-native-community/cli": "20.1.0",
+    "@react-native-community/cli-platform-android": "20.1.0",
+    "@react-native/babel-preset": "0.84.1",
+    "@react-native/metro-config": "0.84.1",
+    "@react-native/typescript-config": "0.84.1",
+    "@types/react": "^19.2.0",
+    "tsx": "^4.20.5",
+    "typescript": "^5.8.3"
+  },
+  "engines": { "node": ">=22.11.0" }
+}
