@@ -17,19 +17,19 @@ These are local build artifacts and are excluded from Git.
 
 ### Choose a smaller APK
 
-Version `0.3.4` builds a separate APK for each CPU architecture, plus a universal
+Version `0.3.5` builds a separate APK for each CPU architecture, plus a universal
 APK. The LAN builds have these measured download sizes:
 
 | Device architecture | APK | Size |
 | --- | --- | --- |
-| ARM64 (`arm64-v8a`) | [ARM64 LAN APK](apk/forma-data-sync-lan-preview-arm64-v8a.apk) | 7.34 MB |
-| 32-bit ARM (`armeabi-v7a`) | [ARM LAN APK](apk/forma-data-sync-lan-preview-armeabi-v7a.apk) | 6.79 MB |
-| 64-bit x86 (`x86_64`) | [x86_64 LAN APK](apk/forma-data-sync-lan-preview-x86_64.apk) | 7.45 MB |
-| 32-bit x86 (`x86`) | [x86 LAN APK](apk/forma-data-sync-lan-preview-x86.apk) | 7.76 MB |
-| All four architectures | [Universal LAN APK](apk/forma-data-sync-lan-preview.apk) | 19.72 MB |
+| ARM64 (`arm64-v8a`) | [ARM64 LAN APK](apk/forma-data-sync-lan-preview-arm64-v8a.apk) | 6.69 MB |
+| 32-bit ARM (`armeabi-v7a`) | [ARM LAN APK](apk/forma-data-sync-lan-preview-armeabi-v7a.apk) | 6.14 MB |
+| 64-bit x86 (`x86_64`) | [x86_64 LAN APK](apk/forma-data-sync-lan-preview-x86_64.apk) | 6.79 MB |
+| 32-bit x86 (`x86`) | [x86 LAN APK](apk/forma-data-sync-lan-preview-x86.apk) | 7.10 MB |
+| All four architectures | [Universal LAN APK](apk/forma-data-sync-lan-preview.apk) | 19.06 MB |
 
 Sizes use decimal MB. The previous universal APK was 51.98 MB. The connected
-Android test device uses `x86_64`; its APK is about 86% smaller. To identify your
+Android test device uses `x86_64`; its APK is about 87% smaller. To identify your
 own phone's supported architectures, run:
 
 ```bash
@@ -43,9 +43,14 @@ without `lan-`, for example
 Each exported APK has an adjacent `.apk.sha256` checksum file.
 
 All variants retain collection, background sync, and history. Release-derived
-builds remove unused code and resources and compress native libraries. Android
-extracts those libraries at installation, so installed storage use is greater
-than the APK download size. See Android's guides to
+builds remove unused code and resources and compress native libraries. Version
+`0.3.5` also compresses the bundled Hermes bytecode using React Native's supported
+bundle-compression setting. Android decompresses the bundle when the app starts
+instead of directly memory-mapping it; this reduces the download at the cost of
+some startup work, as described in React Native's
+[bundle-compression documentation](https://reactnative.dev/docs/0.84/react-native-gradle-plugin#enablebundlecompression).
+Android extracts native libraries at installation, so installed
+storage use is greater than the APK download size. See Android's guides to
 [APK splits](https://developer.android.com/build/configure-apk-splits) and
 [reducing APK size](https://developer.android.com/topic/performance/reduce-apk-size).
 
@@ -57,6 +62,12 @@ debugging, connect the phone, and run this from the repository root:
 adb devices
 adb install -r data_sync/apk/forma-data-sync-preview.apk
 ```
+
+For an existing installation, use `adb install -r` with the matching smaller APK
+or choose **Update** when opening it on the phone. Preview and LAN preview builds
+use the same app ID and local signing key, so an update preserves the login,
+collection permissions, settings, queued records, and sync history. Uninstalling
+or clearing app storage deletes local records; neither is needed for this update.
 
 Open **Forma Data Sync Preview** and choose **Skip login** to start local
 collection. Complete permission onboarding and choose your history range; no

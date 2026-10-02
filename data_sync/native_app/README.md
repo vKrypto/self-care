@@ -8,10 +8,10 @@ source files do not need modification. iOS is deferred.
 For tool installation, platform-specific build commands, and APK installation,
 see the [Android APK build guide](../README.md). The generated standalone test
 APK is available at [`../apk/forma-data-sync-preview.apk`](../apk/forma-data-sync-preview.apk).
-Version `0.3.4` also exports smaller APKs for each architecture. See
+Version `0.3.5` also exports smaller APKs for each architecture. See
 [Choose a smaller APK](../README.md#choose-a-smaller-apk): the ARM64 LAN download
-is 7.34 MB, the connected x86_64 test device's download is 7.45 MB, and the
-universal LAN download is 19.72 MB, reduced from 51.98 MB.
+is 6.69 MB, the connected x86_64 test device's download is 6.79 MB, and the
+universal LAN download is 19.06 MB, reduced from 51.98 MB.
 
 ## Run the server
 
@@ -132,11 +132,20 @@ The build scripts export all APKs and checksums into `data_sync/apk`. Prefer the
 file matching your device's first ABI from `adb shell getprop ro.product.cpu.abilist`:
 `forma-data-sync-preview-arm64-v8a.apk`, `-armeabi-v7a.apk`, `-x86.apk`, or
 `-x86_64.apk`. LAN builds use the prefix `forma-data-sync-lan-preview`.
-The unsuffixed filename is universal. Installing an update with the same signing
-key preserves the app's data and session.
+The unsuffixed filename is universal. Install the matching smaller APK with
+`adb install -r` or open it on the phone and choose **Update**. An update with the
+same app ID and signing key preserves the session, granted permissions,
+collection/upload settings, local queue, and archived history. Do not uninstall
+the existing app or clear its storage to apply an update.
 
 Release, preview, and LAN builds enable R8 optimization and resource shrinking;
 native libraries are compressed in APKs and extracted during installation.
+Starting with `0.3.5`, React Native's
+[`enableBundleCompression` setting](https://reactnative.dev/docs/0.84/react-native-gradle-plugin#enablebundlecompression) also
+compresses the Hermes bytecode bundle. Android decompresses it into memory at
+startup rather than directly memory-mapping the APK asset, trading some startup
+work for a smaller download. Collection sources, background workers, upload
+logic, sync history, and the external-browser website link remain available.
 Health Connect record and unit public members retain their names because the
 collector serializes them through reflection. WorkManager and React Native
 consumer rules preserve worker constructors and native bridge entry points.
@@ -379,6 +388,19 @@ errors. All ten exported APKs passed signature, checksum, architecture, and
 Hermes bundle checks; the signing certificate matches the earlier installed
 preview. The minified DEX audit confirmed that Health Connect public serializer
 members, native bridge methods, and persisted worker class names remain intact.
+
+Updating to `0.3.5-lan-preview` preserved the signed-in session and enabled
+collection/upload settings across three successful cold launches. The device
+check collected a new manual job, uploaded queued data to the LAN server, and
+showed the server's exact batch acknowledgement in collection details. Archived
+app metadata records decrypted and rendered, and an empty usage source showed
+its metadata and no-record explanation. **Open website** launched the external
+browser; returning retained the active native session and collection/upload
+settings. No app crash appeared in the device's crash log. All ten exported APKs
+passed signature, checksum, architecture, and compression checks;
+their compressed bundles decompress to exactly the same Hermes bytecode as
+`0.3.4`. Both preview variants passed Android lint with no errors. Cold-launch
+checks measured Android activity launch, not complete React Native startup.
 Health Connect categories still need validation on a phone with populated records.
 
 Further device validation should cover a real Android phone with populated usage and

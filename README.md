@@ -268,7 +268,9 @@ npm run build
 
 The companion serves `/api/native/*` and the built dashboard from one origin, using the existing database and accounts. Expose it over HTTPS for the preview app and set `COOKIE_SECURE=true` for that deployment. The development build supports local HTTP and uses Metro.
 
-For a phone on the same trusted LAN, `npm run build:apk:lan` from `data_sync/native_app` exports `data_sync/apk/forma-data-sync-lan-preview.apk` and architecture-specific versions. Version `0.3.4` reduces the previous 51.98 MB download to 7.34 MB for ARM64, 7.45 MB for x86_64, or 19.72 MB for universal compatibility. This variant accepts HTTP to private IPv4 addresses such as `http://192.168.1.50:8000`, runs without Metro, and updates the preview app while preserving local records. HTTP does not encrypt credentials or uploaded data; regular preview and release builds still require HTTPS. Keep `COOKIE_SECURE=false` for local HTTP.
+For a phone on the same trusted LAN, `npm run build:apk:lan` from `data_sync/native_app` exports `data_sync/apk/forma-data-sync-lan-preview.apk` and architecture-specific versions. This variant accepts HTTP to private IPv4 addresses such as `http://192.168.1.50:8000` and runs without Metro. HTTP does not encrypt credentials or uploaded data; regular preview and release builds still require HTTPS. Keep `COOKIE_SECURE=false` for local HTTP.
+
+Version `0.3.5` reduces the previous 51.98 MB download to 6.69 MB for ARM64, 6.79 MB for x86_64 (about 87% smaller), or 19.06 MB for universal compatibility. It also compresses the Hermes bytecode bundle; Android decompresses it at startup instead of directly memory-mapping it, adding some startup work for a smaller download. Install with `adb install -r` or choose **Update** on the phone to preserve the existing preview app's login, settings, queued records, and history.
 
 See [`data_sync/README.md`](data_sync/README.md) for prerequisites, SDK setup, Windows commands, APK installation, and troubleshooting. See the [native app README](data_sync/native_app/README.md) for available data sources, permissions, API details, and verification commands.
 
