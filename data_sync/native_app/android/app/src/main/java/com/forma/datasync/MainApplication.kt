@@ -13,6 +13,7 @@ class MainApplication : Application(), ReactApplication {
         getDefaultReactHost(
             context = applicationContext,
             packageList = PackageList(this).packages.apply { add(FormaDataSyncPackage()) },
+            useDevSupport = BuildConfig.DEBUG,
         )
     }
     override fun onCreate() {

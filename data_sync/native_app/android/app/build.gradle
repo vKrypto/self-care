@@ -2,7 +2,12 @@ apply plugin: 'com.android.application'
 apply plugin: 'org.jetbrains.kotlin.android'
 apply plugin: 'com.facebook.react'
 
-react { autolinkLibrariesWithApp() }
+react {
+    autolinkLibrariesWithApp()
+    // Only the development build loads JavaScript from Metro. The preview APK
+    // includes its bundle and Hermes bytecode, just like a release build.
+    debuggableVariants = ['debug']
+}
 
 android {
     ndkVersion rootProject.ext.ndkVersion
@@ -22,6 +27,14 @@ android {
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+        preview {
+            initWith release
+            signingConfig signingConfigs.debug
+            matchingFallbacks = ['release']
+            applicationIdSuffix '.preview'
+            versionNameSuffix '-preview'
+            resValue 'string', 'app_name', 'Forma Data Sync Preview'
         }
     }
     compileOptions {

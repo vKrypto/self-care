@@ -53,6 +53,24 @@ incompatibility in that release's toolchain resolver. Debug signing uses Android
 debug key. Release builds require your deployment signing configuration; the
 project does not ship a release private key.
 
+### Install without Metro
+
+Create the self-contained preview APK:
+
+```bash
+cd data_sync/native_app
+npm ci
+npm run build:apk
+adb install -r android/app/build/outputs/apk/preview/app-preview.apk
+```
+
+This preview contains the JavaScript bundle and Hermes bytecode and runs without
+the Metro development server. It uses Android's local debug signing key and a
+separate `com.forma.datasync.preview` application ID, so it can be installed
+alongside the development app. Preview requires an HTTPS server URL. Use the
+development build above for a local HTTP server. The preview key is for testing;
+configure your own signing key when distributing a release.
+
 ## Flow
 
 1. Sign in with email, password and the companion server origin. The origin is

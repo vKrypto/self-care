@@ -2,6 +2,9 @@ node_modules/
 android/.gradle/
 android/build/
 android/app/build/
+android/app/.cxx/
+android/.kotlin/
+android/app/.externalNativeBuild/
 android/app/debug.keystore
 android/local.properties
 *.hprof
