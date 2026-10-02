@@ -66,10 +66,6 @@ const ACTIVE = ["queued", "generating", "reviewing", "revising"];
 const NAV = [
   [LayoutDashboard, "Overview"],
   [CalendarDays, "My calendar"],
-  [Dumbbell, "Workout plan"],
-  [Utensils, "Meal plan"],
-  [Sparkles, "Care routines"],
-  [TrendingUp, "Progress"],
 ];
 const ADMIN_PAGES = ["Users", "Static pages"];
 const ADMIN_NAV = [
@@ -360,7 +356,7 @@ function App() {
       });
       setJob(next);
       setModal(null);
-      setPage("Overview");
+      setPage("My calendar");
       setPreferences(await api("/preferences"));
       toast("Your preferences are saved. Your plan update is being reviewed.");
     });
@@ -469,17 +465,13 @@ function App() {
     });
   }
   const visibleTasks = tasks.filter((t) =>
-    page === "Workout plan"
+    tab === "Workouts"
       ? t.role === "workout"
-      : page === "Meal plan"
+      : tab === "Meals"
         ? t.role === "meal"
-        : page === "Care routines"
+        : tab === "Care routines"
           ? t.role === "care"
-          : tab === "Workouts"
-            ? t.role === "workout"
-            : tab === "Meals"
-              ? t.role === "meal"
-              : true,
+          : true,
   );
   const feedbackText =
     dueTasks === 0
@@ -582,9 +574,6 @@ function App() {
             >
               <Icon size={19} />
               <span className="nav-text">{p}</span>
-              {p === "Care routines" && !profile?.care_early && (
-                <span className="soon">WEEK 3</span>
-              )}
             </button>
           ))}
         </nav>
@@ -972,22 +961,14 @@ function App() {
                     <h1>
                       {page === "Overview"
                         ? `A fresh day, ${name}.`
-                        : page === "My calendar"
-                          ? "Your daily rhythm."
-                          : page === "Progress"
-                            ? "Every step adds up."
-                            : page === "Workout plan"
-                              ? "Built for your strength."
-                              : page === "Meal plan"
-                                ? "Nourish your potential."
-                                : "Care starts with you."}
+                        : "Your daily rhythm."}
                       <span className="sun">
                         {page === "Overview" ? "✳" : ""}
                       </span>
                     </h1>
                     <p>
                       {page === "Overview"
-                        ? "Show up for yourself. We’ll take care of the plan."
+                        ? "Your current plan, targets, and growth in one place."
                         : "Your personal wellness journey, one day at a time."}
                     </p>
                   </div>
@@ -1133,7 +1114,7 @@ function App() {
                 </section>
               ) : (
                 <>
-                  {page !== "Progress" && (
+                  {page === "Overview" && (
                     <div className="hero">
                       <div className="hero-content">
                         <span className="pill">
@@ -1180,13 +1161,25 @@ function App() {
                   <div className="stats">
                     <Stat
                       icon={<Check size={19} />}
-                      label="Daily progress"
-                      value={`${adherence}%`}
-                      detail={`${completed} of ${tasks.length} activities completed`}
+                      label={
+                        page === "Overview"
+                          ? "Overall progress"
+                          : "Daily progress"
+                      }
+                      value={`${page === "Overview" ? overall : adherence}%`}
+                      detail={
+                        page === "Overview"
+                          ? `${allCompleted} activities completed · ${activeDays} active days`
+                          : `${completed} of ${tasks.length} activities completed`
+                      }
                       color="green"
                     >
                       <div className="progress-track">
-                        <i style={{ width: `${adherence}%` }} />
+                        <i
+                          style={{
+                            width: `${page === "Overview" ? overall : adherence}%`,
+                          }}
+                        />
                       </div>
                     </Stat>
                     <Stat
@@ -1255,8 +1248,58 @@ function App() {
                       </div>
                     </Stat>
                   </div>
-                  {page === "Progress" ? (
+                  {page === "Overview" ? (
                     <>
+                      <section className="progress-page current-plan">
+                        <div className="section-heading">
+                          <h2>Current plan & targets</h2>
+                          <button
+                            className="text-button"
+                            onClick={() => setPage("My calendar")}
+                          >
+                            Open daily plan <ArrowRight size={16} />
+                          </button>
+                        </div>
+                        <p>
+                          {profile?.goal || "Your wellness journey"} ·{" "}
+                          {totalWeeks} weeks
+                        </p>
+                        <p className="muted">
+                          {labelDate(plan.start_date, {
+                            month: "short",
+                            day: "numeric",
+                          })}{" "}
+                          –{" "}
+                          {labelDate(plan.end_date, {
+                            month: "short",
+                            day: "numeric",
+                            year: "numeric",
+                          })}{" "}
+                          · {plan.daily_calorie_target.toLocaleString()} kcal
+                          daily target
+                        </p>
+                        <div className="target-summary">
+                          {MACRO_LABELS.map(
+                            ([key, label]) =>
+                              plan.daily_nutrition_targets?.[key] != null && (
+                                <span key={key}>
+                                  {label}
+                                  <b>
+                                    {plan.daily_nutrition_targets[key]} g / day
+                                  </b>
+                                </span>
+                              ),
+                          )}
+                        </div>
+                      </section>
+                      <WeeklyProgress
+                        days={days}
+                        statuses={statuses}
+                        onDay={(value) => {
+                          setDate(value);
+                          setPage("My calendar");
+                        }}
+                      />
                       <section className="progress-page">
                         <div className="section-heading">
                           <div>
@@ -1393,13 +1436,7 @@ function App() {
                         <div className="section-heading">
                           <div>
                             <h2>
-                              {page === "Workout plan"
-                                ? "Your workouts"
-                                : page === "Meal plan"
-                                  ? "Your meals"
-                                  : page === "Care routines"
-                                    ? "Your care routines"
-                                    : "Your daily plan"}
+                              Your daily plan
                               <span className="count">
                                 {tasks.length} activities
                               </span>
@@ -1458,13 +1495,16 @@ function App() {
                           ))}
                         </div>
                         <div className="tabs">
-                          {["All activities", "Workouts", "Meals"].map((t) => (
+                          {[
+                            "All activities",
+                            "Workouts",
+                            "Meals",
+                            "Care routines",
+                          ].map((t) => (
                             <button
                               key={t}
                               onClick={() => {
                                 setTab(t);
-                                if (!["Overview", "My calendar"].includes(page))
-                                  setPage("My calendar");
                               }}
                               className={tab === t ? "selected" : ""}
                             >
@@ -1527,12 +1567,12 @@ function App() {
                             <div className="empty-state">
                               <Sparkles size={28} />
                               <h3>
-                                {page === "Care routines"
+                                {tab === "Care routines"
                                   ? "Make room for a little care."
                                   : "No activities here yet."}
                               </h3>
                               <p>
-                                {page === "Care routines"
+                                {tab === "Care routines"
                                   ? profile.focus.some((f) =>
                                       f.includes("care"),
                                     )
@@ -1540,7 +1580,7 @@ function App() {
                                     : "Add skin or hair care to your focus in Customize plan."
                                   : "Select a date in your plan."}
                               </p>
-                              {page === "Care routines" &&
+                              {tab === "Care routines" &&
                                 profile.focus.some((f) => f.includes("care")) &&
                                 !profile.care_early && (
                                   <button
@@ -1579,10 +1619,12 @@ function App() {
                       <div className="right-column">
                         <section className="weekly">
                           <div className="section-heading">
-                            <h2>Your week at a glance</h2>
+                            <h2>Day-by-day progress</h2>
                             <TrendingUp size={18} />
                           </div>
-                          <p>Small wins make a big difference.</p>
+                          <p>
+                            Daily activity completion for the selected week.
+                          </p>
                           <div className="chart">
                             {weekDays.map((d) => {
                               const value = d.tasks.length
@@ -2634,6 +2676,57 @@ function PhotoGrid({ photos, remove }) {
     </div>
   ) : (
     <p className="muted">No photos uploaded yet.</p>
+  );
+}
+function WeeklyProgress({ days, statuses, onDay }) {
+  const weeks = [...new Set(days.map((day) => day.week))];
+  return (
+    <section className="progress-page">
+      <div className="section-heading">
+        <div>
+          <h2>Weekly progress</h2>
+          <p>Completed activities against your weekly plan.</p>
+        </div>
+        <TrendingUp size={18} />
+      </div>
+      <div className="chart weekly-progress-chart">
+        {weeks.map((week) => {
+          const weekDays = days.filter((day) => day.week === week);
+          const total = weekDays.reduce(
+            (sum, day) => sum + day.tasks.length,
+            0,
+          );
+          const completed = weekDays.reduce(
+            (sum, day) =>
+              sum +
+              day.tasks.filter(
+                (task) =>
+                  statuses[statusKey(day.date, task.id)] === "completed",
+              ).length,
+            0,
+          );
+          const percent = total ? Math.round((completed / total) * 100) : 0;
+          return (
+            <button
+              className="bar-column"
+              key={week}
+              title={`Week ${week}: ${completed} of ${total} activities completed (${percent}%)`}
+              onClick={() => onDay(weekDays[0].date)}
+            >
+              <b>{percent}%</b>
+              <div className="bar-space">
+                <div className="bar" style={{ height: `${percent}%` }} />
+              </div>
+              <span>Week {week}</span>
+            </button>
+          );
+        })}
+      </div>
+      <div className="chart-legend">
+        <span className="dot green" />
+        Activity completion · select a week to open its daily plan
+      </div>
+    </section>
   );
 }
 function WeightChart({ checkins }) {

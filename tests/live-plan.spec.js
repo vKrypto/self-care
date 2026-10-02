@@ -40,6 +40,7 @@ test("live generated plan: tracking, four weeks, details, water, photos and prog
     data: { date: me.plan.start_date, water: 0, weight: null, notes: "" },
   });
   await page.reload();
+  await page.getByRole("button", { name: "My calendar", exact: true }).click();
   await expect(page.locator(".task").first()).toBeVisible();
   await page.screenshot({
     path: "test-results/live-dashboard-desktop.png",
@@ -51,6 +52,7 @@ test("live generated plan: tracking, four weeks, details, water, photos and prog
   await expect(first).toHaveClass(/completed/);
   await expect(page.getByText(/1 of \d+ activities completed/)).toBeVisible();
   await page.reload();
+  await page.getByRole("button", { name: "My calendar", exact: true }).click();
   await expect(page.locator(".task").first()).toHaveClass(/completed/);
   await page
     .locator(".task")
@@ -85,16 +87,14 @@ test("live generated plan: tracking, four weeks, details, water, photos and prog
   await page.getByLabel("Weight (kg, optional)").fill("74.5");
   await page.getByLabel("How are you feeling?").fill("Good energy today");
   // Valid one-pixel PNG; the backend decodes and re-encodes it.
-  await page
-    .getByLabel("Progress photos (optional)")
-    .setInputFiles({
-      name: "progress.png",
-      mimeType: "image/png",
-      buffer: Buffer.from(
-        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aOioAAAAASUVORK5CYII=",
-        "base64",
-      ),
-    });
+  await page.getByLabel("Progress photos (optional)").setInputFiles({
+    name: "progress.png",
+    mimeType: "image/png",
+    buffer: Buffer.from(
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aOioAAAAASUVORK5CYII=",
+      "base64",
+    ),
+  });
   await page.getByRole("button", { name: "Save check-in" }).click();
   await expect(page.getByText("Your daily check-in is saved.")).toBeVisible();
   await page.getByRole("button", { name: "Share feedback" }).click();
@@ -103,7 +103,7 @@ test("live generated plan: tracking, four weeks, details, water, photos and prog
     .locator("textarea")
     .fill("Prefer more variety at breakfast.");
   await page.getByRole("button", { name: "Save feedback" }).click();
-  await page.getByRole("button", { name: "Progress", exact: true }).click();
+  await page.getByRole("button", { name: "Overview", exact: true }).click();
   await expect(
     page.getByRole("heading", { name: "Your four-week progress" }),
   ).toBeVisible();
@@ -117,7 +117,7 @@ test("live generated plan: tracking, four weeks, details, water, photos and prog
       () => document.documentElement.scrollWidth <= window.innerWidth,
     ),
   ).toBe(true);
-  await page.getByRole("button", { name: "Overview", exact: true }).click();
+  await page.getByRole("button", { name: "My calendar", exact: true }).click();
   await expect(page.locator(".task")).not.toHaveCount(0);
   await page.screenshot({
     path: "test-results/live-dashboard-mobile.png",

@@ -97,11 +97,9 @@ test("daily cards show totals, sets/reps, portions and tracked completion", asyn
     "aria-label",
     "Workouts",
   );
-  const biceps = daily
-    .locator(".workout-card")
-    .filter({
-      has: page.getByRole("heading", { name: "Bicep curls", exact: true }),
-    });
+  const biceps = daily.locator(".workout-card").filter({
+    has: page.getByRole("heading", { name: "Bicep curls", exact: true }),
+  });
   await expect(biceps.locator(".exercise-quantity")).toContainText(
     "3 sets × 10 reps",
   );
@@ -140,6 +138,7 @@ test("daily cards show totals, sets/reps, portions and tracked completion", asyn
     "1 hr",
   );
   await page.reload();
+  await page.getByRole("button", { name: "My calendar", exact: true }).click();
   await expect(daily.locator(".workout-card").first()).toHaveClass(/completed/);
   await daily
     .locator(".meal-card")

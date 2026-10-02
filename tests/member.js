@@ -66,6 +66,7 @@ export function memberMe(account, { tasks } = {}) {
 export async function openPlan(page, me) {
   await page.route("**/api/me", (route) => route.fulfill({ json: me }));
   await page.reload();
+  await page.getByRole("button", { name: "My calendar", exact: true }).click();
   await page.locator("#daily").waitFor();
 }
 
@@ -77,7 +78,5 @@ export async function removeMember(page) {
   await page.request.post("/api/auth/login", {
     data: { email: "admin@example.com", password: "admin123" },
   });
-  expect((await page.request.delete("/api/admin/users/" + id)).ok()).toBe(
-    true,
-  );
+  expect((await page.request.delete("/api/admin/users/" + id)).ok()).toBe(true);
 }

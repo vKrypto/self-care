@@ -143,7 +143,7 @@ test("minimal view shows time per body area and only ingredients, and is remembe
   await expect(meals).toContainText("52/95 g protein");
 
   await page.reload();
-  await page.getByRole("button", { name: "Overview", exact: true }).click();
+  await page.getByRole("button", { name: "My calendar", exact: true }).click();
   await expect(daily.getByRole("button", { name: "Minimal" })).toHaveAttribute(
     "aria-pressed",
     "true",

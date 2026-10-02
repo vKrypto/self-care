@@ -3640,3 +3640,31 @@ a:focus-visible {
   text-decoration: underline;
   white-space: normal;
 }
+
+.target-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 24px;
+  margin-top: 18px;
+}
+.target-summary span {
+  display: grid;
+  gap: 6px;
+  color: #a5b89a;
+  font-size: 12px;
+}
+.target-summary b {
+  color: #e1e8db;
+  font-size: 15px;
+}
+.weekly-progress-chart {
+  overflow-x: auto;
+  gap: 18px;
+}
+.weekly-progress-chart .bar-column {
+  min-width: 56px;
+}
+.weekly-progress-chart .bar-column > b {
+  color: #bed8aa;
+  font-size: 12px;
+}

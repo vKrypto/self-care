@@ -164,7 +164,7 @@ test("extend accepts up to 28 days and the calendar reaches all added weeks on m
     page.getByText("Week 8 of 8", { exact: true }).first(),
   ).toBeVisible();
   await expect(page.getByRole("button", { name: "Next week" })).toBeDisabled();
-  await page.getByRole("button", { name: "Progress", exact: true }).click();
+  await page.getByRole("button", { name: "Overview", exact: true }).click();
   await expect(
     page.getByRole("heading", { name: "Your progress over time" }),
   ).toBeVisible();
