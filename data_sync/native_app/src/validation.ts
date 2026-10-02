@@ -1,6 +1,8 @@
 // Keep navigation and credentials on the configured server's origin.
 export function normalizeServerUrl(input: string, development: boolean): string {
-  const url = new URL(input.trim());
+  let url: URL;
+  try { url = new URL(input.trim()); }
+  catch { throw new Error('Enter a valid server URL, including https://.'); }
   if (url.username || url.password || url.search || url.hash || url.pathname !== '/') {
     throw new Error('Enter the server origin only, for example https://forma.example.com.');
   }
@@ -12,6 +14,10 @@ export function normalizeServerUrl(input: string, development: boolean): string 
 
 export function isDashboardNavigationAllowed(destination: string, serverUrl: string): boolean {
   if (destination === 'about:blank') { return true; }
-  try { return new URL(destination).origin === new URL(serverUrl).origin; }
+  try {
+    const url = new URL(destination);
+    const server = new URL(serverUrl);
+    return !url.username && !url.password && url.protocol === server.protocol && url.origin === server.origin;
+  }
   catch { return false; }
 }

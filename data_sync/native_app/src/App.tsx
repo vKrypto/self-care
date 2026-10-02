@@ -1,4 +1,4 @@
-import React, {useCallback, useEffect, useState} from 'react';
+import React, {useCallback, useEffect, useRef, useState} from 'react';
 import {
   ActivityIndicator, AppState, KeyboardAvoidingView, Platform, Pressable,
   ScrollView, StyleSheet, Text, TextInput, View,
@@ -6,6 +6,7 @@ import {
 import {SafeAreaProvider, SafeAreaView} from 'react-native-safe-area-context';
 import {WebView} from 'react-native-webview';
 import {dataSync} from './native';
+import {DASHBOARD_AUTH_BRIDGE, dashboardAuthEvent} from './dashboard';
 import type {Permissions, Session, SyncStatus} from './types';
 import {isDashboardNavigationAllowed, normalizeServerUrl} from './validation';
 
@@ -14,7 +15,7 @@ const CONSENT = 'I agree to upload the device usage, calendar, location and heal
 function Button({title, onPress, disabled = false, secondary = false}: {
   title: string; onPress: () => void; disabled?: boolean; secondary?: boolean;
 }) {
-  return <Pressable accessibilityRole="button" disabled={disabled} onPress={onPress}
+  return <Pressable accessibilityRole="button" accessibilityState={{disabled}} disabled={disabled} onPress={onPress}
     style={({pressed}) => [styles.button, secondary && styles.secondaryButton, (disabled || pressed) && styles.dim]}>
     <Text style={[styles.buttonText, secondary && styles.secondaryText]}>{title}</Text>
   </Pressable>;
@@ -36,6 +37,7 @@ function Content() {
   const [session, setSession] = useState<Session | null>(null);
   const [starting, setStarting] = useState(true);
   const [busy, setBusy] = useState(false);
+  const [syncing, setSyncing] = useState(false);
   const [error, setError] = useState('');
   const [serverUrl, setServerUrl] = useState(__DEV__ ? 'http://10.0.2.2:8000' : '');
   const [email, setEmail] = useState('');
@@ -47,26 +49,50 @@ function Content() {
   const [historyDays, setHistoryDays] = useState('30');
   const [webError, setWebError] = useState('');
   const [webKey, setWebKey] = useState(0);
+  const sessionRef = useRef<Session | null>(null);
+  const actionBusy = useRef(false);
+  const manualSyncBusy = useRef(false);
+  const checkingDashboardAuth = useRef(false);
+  const refreshRevision = useRef(0);
+
+  const rememberSession = useCallback((saved: Session | null) => {
+    sessionRef.current = saved;
+    setSession(saved);
+  }, []);
+
+  const clearSessionView = useCallback(() => {
+    rememberSession(null); setPassword(''); setSettings(false); setConsent(false);
+    setStatus(null); setWebError(''); setWebKey(k => k + 1);
+  }, [rememberSession]);
 
   const refresh = useCallback(async () => {
-    const [nextPermissions, nextStatus] = await Promise.all([dataSync.permissionStatus(), dataSync.status()]);
-    setPermissions(nextPermissions); setStatus(nextStatus);
-    if (nextStatus.authRequired) {
-      setSession(null); setPassword(''); setError('Your session expired. Sign in again to resume uploads.');
+    const expectedToken = sessionRef.current?.token;
+    const revision = ++refreshRevision.current;
+    const [permissionResult, statusResult] = await Promise.allSettled([dataSync.permissionStatus(), dataSync.status()]);
+    if (revision !== refreshRevision.current || sessionRef.current?.token !== expectedToken) { return; }
+    if (permissionResult.status === 'fulfilled') { setPermissions(permissionResult.value); }
+    if (statusResult.status === 'fulfilled') {
+      setStatus(statusResult.value);
+      if (statusResult.value.authRequired) {
+        clearSessionView(); setError('Your session expired. Sign in again to resume uploads.');
+        return;
+      }
     }
-  }, []);
+    if (statusResult.status === 'rejected') { throw statusResult.reason; }
+    if (permissionResult.status === 'rejected') { throw permissionResult.reason; }
+  }, [clearSessionView]);
 
   useEffect(() => {
     let active = true;
     dataSync.restoreSession().then(saved => {
       if (!active) { return; }
-      setSession(saved);
+      rememberSession(saved);
       if (saved) { setServerUrl(saved.serverUrl); setEmail(saved.user.email); }
       return refresh();
     }).catch(e => active && setError(e.message || 'Unable to restore your session.'))
       .finally(() => active && setStarting(false));
     return () => { active = false; };
-  }, [refresh]);
+  }, [refresh, rememberSession]);
 
   useEffect(() => {
     const subscription = AppState.addEventListener('change', state => {
@@ -77,17 +103,25 @@ function Content() {
   }, [session, refresh]);
 
   const perform = async (action: () => Promise<unknown>) => {
+    if (actionBusy.current) { return; }
+    actionBusy.current = true;
     setBusy(true); setError('');
     try { await action(); await refresh(); }
-    catch (e) { setError(e instanceof Error ? e.message : 'Please retry.'); }
-    finally { setBusy(false); }
+    catch (e) {
+      setError(e instanceof Error ? e.message : 'Please retry.');
+      // Failed authenticated requests can invalidate the native token. Refresh
+      // immediately so the user can sign in again without waiting for polling.
+      await refresh().catch(() => {});
+    }
+    finally { actionBusy.current = false; setBusy(false); }
   };
 
   const login = () => perform(async () => {
     const origin = normalizeServerUrl(serverUrl, __DEV__);
     if (!email.trim() || !password) { throw new Error('Enter your email and password.'); }
     const saved = await dataSync.login(origin, email.trim().toLowerCase(), password);
-    setPassword(''); setSession(saved); setServerUrl(saved.serverUrl); setSettings(false); setConsent(false); setWebError('');
+    setPassword(''); rememberSession(saved); setServerUrl(saved.serverUrl); setSettings(false); setConsent(false); setWebError('');
+    setHistoryDays(String((await dataSync.status()).historyDays));
   });
 
   const submitOnboarding = () => perform(async () => {
@@ -98,13 +132,52 @@ function Content() {
     const days = Number(historyDays);
     if (!Number.isInteger(days) || days < 1 || days > 365) { throw new Error('Choose 1–365 days of available history.'); }
     const saved = await dataSync.completeOnboarding(days);
-    setSession(saved); setSettings(false);
+    rememberSession(saved); setSettings(false);
   });
 
   const logout = () => perform(async () => {
-    await dataSync.logout(); setSession(null); setPassword(''); setSettings(false); setConsent(false);
-    setStatus(null); setWebError(''); setWebKey(k => k + 1);
+    await dataSync.logout(); clearSessionView();
   });
+
+  const syncNow = async () => {
+    if (manualSyncBusy.current || actionBusy.current || !sessionRef.current) { return; }
+    const expectedToken = sessionRef.current.token;
+    manualSyncBusy.current = true; setSyncing(true); setError('');
+    try {
+      await dataSync.syncNow();
+      if (sessionRef.current?.token === expectedToken) { await refresh(); }
+    } catch (e) {
+      const cancelled = e instanceof Error && 'code' in e && e.code === 'E_CANCELLED';
+      if (!cancelled && sessionRef.current?.token === expectedToken) {
+        setError(e instanceof Error ? e.message : 'Sync could not finish. Please retry.');
+      }
+    } finally { manualSyncBusy.current = false; setSyncing(false); }
+  };
+
+  const handleDashboardAuth = async (event: 'auth-required' | 'signed-out', expectedToken: string) => {
+    if (checkingDashboardAuth.current || sessionRef.current?.token !== expectedToken) { return; }
+    checkingDashboardAuth.current = true;
+    try {
+      if (event === 'signed-out') {
+        await dataSync.logout();
+        if (sessionRef.current?.token === expectedToken) { clearSessionView(); }
+      } else {
+        // An AJAX 401 can mean either the native token expired or the WebView
+        // cookie failed. Verify the native session before asking for sign-in.
+        const saved = await dataSync.restoreSession();
+        if (sessionRef.current?.token !== expectedToken) { return; }
+        if (!saved) {
+          clearSessionView(); setError('Your session expired. Sign in again to resume uploads.');
+        } else {
+          setWebError('Dashboard sign-in failed. Check the server connection and reload the dashboard.');
+        }
+      }
+    } catch {
+      if (sessionRef.current?.token === expectedToken) {
+        setWebError('Cannot verify your dashboard session. Check the server connection and reload.');
+      }
+    } finally { checkingDashboardAuth.current = false; }
+  };
 
   if (starting) {
     return <SafeAreaView style={styles.center}><ActivityIndicator color="#267957" /><Text style={styles.body}>Opening Forma…</Text></SafeAreaView>;
@@ -130,12 +203,12 @@ function Content() {
         <Text style={styles.body}>Sign in with your existing Forma account to connect this device and open your dashboard.</Text>
         <View style={styles.card}>
           <Text style={styles.label}>Server URL</Text>
-          <TextInput accessibilityLabel="Server URL" value={serverUrl} onChangeText={setServerUrl} style={styles.input} autoCapitalize="none" autoCorrect={false} keyboardType="url" placeholder="https://forma.example.com" placeholderTextColor="#8b938d" />
-          <Text style={styles.hint}>Use the server running the Phase 3 companion API. For an emulator, the local server is http://10.0.2.2:8000.</Text>
+          <TextInput accessibilityLabel="Server URL" value={serverUrl} onChangeText={setServerUrl} editable={!busy} style={styles.input} autoCapitalize="none" autoCorrect={false} keyboardType="url" placeholder="https://forma.example.com" placeholderTextColor="#8b938d" />
+          <Text style={styles.hint}>Enter the HTTPS address of your Forma server.{__DEV__ ? ' For an emulator development build, use http://10.0.2.2:8000.' : ''}</Text>
           <Text style={styles.label}>Email</Text>
-          <TextInput accessibilityLabel="Email" value={email} onChangeText={setEmail} style={styles.input} autoCapitalize="none" autoCorrect={false} keyboardType="email-address" autoComplete="email" placeholder="you@example.com" placeholderTextColor="#8b938d" />
+          <TextInput accessibilityLabel="Email" value={email} onChangeText={setEmail} editable={!busy} style={styles.input} autoCapitalize="none" autoCorrect={false} keyboardType="email-address" autoComplete="email" placeholder="you@example.com" placeholderTextColor="#8b938d" />
           <Text style={styles.label}>Password</Text>
-          <TextInput accessibilityLabel="Password" value={password} onChangeText={setPassword} style={styles.input} secureTextEntry autoCapitalize="none" autoCorrect={false} autoComplete="current-password" onSubmitEditing={login} />
+          <TextInput accessibilityLabel="Password" value={password} onChangeText={setPassword} editable={!busy} style={styles.input} secureTextEntry autoCapitalize="none" autoCorrect={false} autoComplete="current-password" onSubmitEditing={login} />
           <Button title="Sign in" onPress={login} disabled={busy} />
         </View>
         <Text style={styles.hint}>Your password is used once to sign in. A protected session token authenticates future uploads.</Text>
@@ -162,7 +235,7 @@ function Content() {
       <View style={styles.card}>
         <Text style={styles.cardTitle}>Know what is available</Text>
         <Text style={styles.body}>This connection cannot read private messages, passwords, other apps’ private files or complete lifetime history. Health Connect only contains records shared by participating apps. Missing permissions and unavailable sources are recorded with each upload.</Text>
-        <Pressable accessibilityRole="checkbox" accessibilityState={{checked: consent}} onPress={() => setConsent(!consent)} style={styles.consent}>
+        <Pressable accessibilityRole="checkbox" accessibilityState={{checked: consent, disabled: busy}} disabled={busy} onPress={() => setConsent(!consent)} style={styles.consent}>
           <Text style={styles.checkbox}>{consent ? '☑' : '☐'}</Text><Text style={[styles.body, styles.flex]}>{CONSENT}</Text>
         </Pressable>
         <Button title={session.onboarded ? 'Save connection & sync' : 'Connect & open dashboard'} disabled={busy || !consent} onPress={submitOnboarding} />
@@ -174,7 +247,7 @@ function Content() {
         <Text style={styles.hint}>{status?.lastSyncAt ? `Last upload: ${new Date(status.lastSyncAt).toLocaleString()}` : 'Waiting for the first upload'}{status?.pending ? ' · Upload queued' : ''}</Text>
         {!!status?.lastError && <Text accessibilityRole="alert" style={styles.errorText}>{status.lastError}</Text>}
         <View style={styles.row}>
-          <Button title="Sync now" secondary disabled={busy || !status?.enabled} onPress={() => perform(() => dataSync.syncNow())} />
+          <Button title={syncing ? 'Syncing…' : 'Sync now'} secondary disabled={busy || syncing || !status?.enabled} onPress={() => { void syncNow(); }} />
           <Button title={status?.enabled ? 'Pause uploads' : 'Resume uploads'} secondary disabled={busy} onPress={() => perform(() => status?.enabled ? dataSync.pauseSync() : dataSync.resumeSync())} />
         </View>
       </View>
@@ -183,13 +256,18 @@ function Content() {
           source={{uri: `${session.serverUrl}/api/native/dashboard`, headers: {Authorization: `Bearer ${session.token}`}}}
           originWhitelist={[session.serverUrl]} javaScriptEnabled domStorageEnabled
           sharedCookiesEnabled thirdPartyCookiesEnabled={false} mixedContentMode="never"
+          injectedJavaScriptBeforeContentLoaded={DASHBOARD_AUTH_BRIDGE} injectedJavaScript={DASHBOARD_AUTH_BRIDGE}
+          onMessage={event => {
+            const authEvent = dashboardAuthEvent(event.nativeEvent.data, event.nativeEvent.url, session.serverUrl);
+            if (authEvent) { void handleDashboardAuth(authEvent, session.token); }
+          }}
           allowFileAccess={false} allowFileAccessFromFileURLs={false} allowUniversalAccessFromFileURLs={false}
           setSupportMultipleWindows={false} startInLoadingState
           onShouldStartLoadWithRequest={request => isDashboardNavigationAllowed(request.url, session.serverUrl)}
           renderLoading={() => <ActivityIndicator color="#267957" style={styles.spinner} />}
           onError={() => setWebError('Cannot open your dashboard. Check your server connection and reload.')}
           onHttpError={event => {
-            if (event.nativeEvent.statusCode === 401) { setSession(null); setError('Your session expired. Sign in again.'); }
+            if (event.nativeEvent.statusCode === 401) { void handleDashboardAuth('auth-required', session.token); }
             else if (event.nativeEvent.statusCode >= 400) { setWebError(`Dashboard returned ${event.nativeEvent.statusCode}. Check that the web app has been built on the server.`); }
           }} />}
     </View>}

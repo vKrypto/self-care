@@ -1,0 +1,3 @@
+# Downloadable builds are generated locally; keep the build instructions in Git.
+apk/*.apk
+apk/*.apk.sha256

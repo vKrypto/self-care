@@ -83,9 +83,14 @@ class AndroidCollector(context: Context) {
     suspend fun availability(background: Boolean): JSONObject = withContext(Dispatchers.IO) {
         val data = JSONObject()
         val usage = safely { usageUnavailable() ?: section("ok") }
-        listOf("usage_stats", "usage_events", "usage_event_stats", "network_usage_wifi", "network_usage_mobile").forEach {
+        listOf("usage_stats", "usage_events", "network_usage_wifi", "network_usage_mobile").forEach {
             data.put(it, JSONObject(usage.toString()))
         }
+        data.put("usage_event_stats", if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            JSONObject(usage.toString())
+        } else {
+            section("unavailable").put("reason", "android_api_level_not_supported").put("minimum_sdk_int", 28)
+        })
         data.put("visible_apps", section("ok").snapshot())
         data.put("device_snapshot", section("ok").snapshot())
         data.put("calendar_events", section(if (granted(Manifest.permission.READ_CALENDAR)) "ok" else "denied"))
@@ -212,6 +217,9 @@ class AndroidCollector(context: Context) {
     }
 
     private fun usageEventStats(startMs: Long, endMs: Long): JSONObject {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P) {
+            return section("unavailable").put("reason", "android_api_level_not_supported").put("minimum_sdk_int", 28)
+        }
         usageUnavailable()?.let { return it }
         val manager = context.getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
         val records = JSONArray()

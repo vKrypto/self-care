@@ -1,4 +1,0 @@
-/home/creator-base/github/exercise_planner/data_sync/native_app/android/app/.cxx/Debug/w64i57m3/armeabi-v7a/CMakeFiles/_CMakeLTOTest-CXX/bin/CMakeFiles/foo.dir
-/home/creator-base/github/exercise_planner/data_sync/native_app/android/app/.cxx/Debug/w64i57m3/armeabi-v7a/CMakeFiles/_CMakeLTOTest-CXX/bin/CMakeFiles/boo.dir
-/home/creator-base/github/exercise_planner/data_sync/native_app/android/app/.cxx/Debug/w64i57m3/armeabi-v7a/CMakeFiles/_CMakeLTOTest-CXX/bin/CMakeFiles/edit_cache.dir
-/home/creator-base/github/exercise_planner/data_sync/native_app/android/app/.cxx/Debug/w64i57m3/armeabi-v7a/CMakeFiles/_CMakeLTOTest-CXX/bin/CMakeFiles/rebuild_cache.dir

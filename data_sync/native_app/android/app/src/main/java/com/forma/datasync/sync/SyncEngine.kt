@@ -8,6 +8,7 @@ import com.forma.datasync.collectors.HealthPermissions
 import org.json.JSONArray
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.sync.Mutex
@@ -22,24 +23,26 @@ class SyncEngine(context: Context) {
     private val store = SecureStore(appContext)
     private val collector = AndroidCollector(appContext)
 
-    suspend fun restoreSession(): JSONObject? = withContext(Dispatchers.IO) {
-        val state = store.read()
-        if (!state.has("token")) return@withContext null
-        try {
-            val result = api(state).request("/api/native/me")
-            val user = result.optJSONObject("user") ?: result
-            if (user.has("id")) store.update { it.put("user", user) }
-        } catch (error: ApiException) {
-            if (error.status == 401) {
-                invalidateAuth()
-                return@withContext null
+    suspend fun restoreSession(): JSONObject? = lock.withLock {
+        withContext(Dispatchers.IO) {
+            val state = store.read()
+            if (!state.has("token")) return@withContext null
+            try {
+                val result = api(state).request("/api/native/me")
+                val user = result.optJSONObject("user") ?: result
+                if (user.has("id")) store.update { it.put("user", user) }
+            } catch (error: ApiException) {
+                if (error.status == 401) {
+                    invalidateAuth()
+                    return@withContext null
+                }
+                // Keep an existing local session while offline or the server is unavailable.
+            } catch (_: IOException) {
+                // Cached session permits offline dashboard/onboarding; uploads remain queued.
             }
-            // Keep an existing local session while offline or the server is unavailable.
-        } catch (_: IOException) {
-            // Cached session permits offline dashboard/onboarding; uploads remain queued.
+            val current = store.read()
+            if (current.has("token")) session(current) else null
         }
-        val current = store.read()
-        if (current.has("token")) session(current) else null
     }
 
     suspend fun login(serverUrl: String, email: String, password: String): JSONObject = lock.withLock {
@@ -76,13 +79,18 @@ class SyncEngine(context: Context) {
         require(PermissionStatus.read(appContext).optBoolean("usageAccess")) {
             "Grant Usage Access before completing onboarding."
         }
-        api(state).request("/api/native/devices", JSONObject()
-            .put("device_id", state.getString("deviceId"))
-            .put("platform", "android")
-            .put("name", "${Build.MANUFACTURER} ${Build.MODEL}")
-            .put("sync_interval_minutes", 60)
-            .put("consent_version", "1")
-            .put("history_days", historyDays))
+        try {
+            api(state).request("/api/native/devices", JSONObject()
+                .put("device_id", state.getString("deviceId"))
+                .put("platform", "android")
+                .put("name", "${Build.MANUFACTURER} ${Build.MODEL}")
+                .put("sync_interval_minutes", 60)
+                .put("consent_version", "1")
+                .put("history_days", historyDays))
+        } catch (error: ApiException) {
+            if (error.status == 401) invalidateAuth()
+            throw error
+        }
         val requestedStart = System.currentTimeMillis() - historyDays * SyncPlanner.DAY_MS
         if (state.has("historyStart") && requestedStart < state.getLong("historyStart")) {
             // Keep an already-collected retry payload, but prevent its ack from skipping the new backfill.
@@ -119,6 +127,7 @@ class SyncEngine(context: Context) {
 
     fun pause(): JSONObject {
         store.update { it.put("enabled", false) }
+        activeSync?.cancel(CancellationException("Sync paused."))
         SyncScheduler.cancel(appContext)
         SyncNotifications.clear(appContext)
         return status()
@@ -136,6 +145,7 @@ class SyncEngine(context: Context) {
     suspend fun logout() {
         // Stop new upload attempts immediately, including before waiting for an in-flight request.
         val old = store.update { it.put("enabled", false) }
+        activeSync?.cancel(CancellationException("Signed out."))
         SyncScheduler.cancel(appContext)
         SyncNotifications.clear(appContext)
         lock.withLock {
@@ -158,6 +168,7 @@ class SyncEngine(context: Context) {
     suspend fun sync(background: Boolean): Boolean = lock.withLock {
         val initial = store.read()
         if (!initial.optBoolean("enabled") || !initial.has("token")) return@withLock false
+        activeSync = currentCoroutineContext()[Job]
         val now = System.currentTimeMillis()
         val deadline = now + 90_000L
         val historyStart = initial.optLong("historyStart", now - initial.optInt("historyDays", 30) * SyncPlanner.DAY_MS)
@@ -165,9 +176,6 @@ class SyncEngine(context: Context) {
             // Probe statuses independently. Revoked or background-restricted sections cannot advance.
             val probe = collector.availability(background)
             val uploadPermissions = if (background) collector.availability(background = false) else probe
-            val authorized = uploadPermissions.keys().asSequence().filter { key ->
-                isComplete(uploadPermissions.optJSONObject(key))
-            }.toSet()
             val permissions = PermissionStatus.read(appContext)
             val historyGranted = permissions.getJSONObject("health").optBoolean("history_granted")
             if (historyGranted && !initial.optBoolean("healthHistoryGranted")) {
@@ -232,10 +240,7 @@ class SyncEngine(context: Context) {
                 val cursors = state.optJSONObject("cursors") ?: JSONObject()
                 var pending = store.readPending()
                 if (pending != null) {
-                    val exportedSources = pending.getJSONObject("payload").getJSONObject("data").keys().asSequence()
-                        .filter { it != "source_status" }.toList()
-                    val permitted = exportedSources.all { it in authorized }
-                    if (!permitted || pending.optString("userId") != state.getJSONObject("user").getString("id")) {
+                    if (SyncBatchPolicy.decide(pending, state, uploadPermissions) == SyncBatchPolicy.Decision.RECOLLECT) {
                         // A revoked permission invalidates the local pending export; recollect allowed sources.
                         store.clearPending()
                         pending = null
@@ -330,16 +335,20 @@ class SyncEngine(context: Context) {
                 // Settings can change during a long catch-up run. Check again before
                 // transmitting a previously collected export, including retry payloads.
                 val freshAccess = collector.availability(background = false)
+                currentCoroutineContext().ensureActive()
+                val uploadState = store.read()
+                val decision = SyncBatchPolicy.decide(pending, uploadState, freshAccess)
+                if (decision == SyncBatchPolicy.Decision.STOP) return@withLock false
                 val revoked = payload.getJSONObject("data").keys().asSequence()
                     .filter { it != "source_status" }
                     .filterNot { isComplete(freshAccess.optJSONObject(it)) }.toList()
-                if (revoked.isNotEmpty()) {
+                if (decision == SyncBatchPolicy.Decision.RECOLLECT) {
                     store.clearPending()
                     revoked.forEach { excludeFailedSource(it) }
                     continue
                 }
                 try {
-                    val ack = api(state).request("/api/native/batches", payload)
+                    val ack = api(uploadState).request("/api/native/batches", payload)
                     check(ack.optBoolean("accepted") && ack.optString("batch_id") == payload.getString("batch_id")) {
                         "The server did not acknowledge this batch."
                     }
@@ -382,6 +391,8 @@ class SyncEngine(context: Context) {
         } catch (error: Exception) {
             store.update { it.put("lastError", "Sync could not complete. Check your connection and granted permissions; the pending batch is retained.") }
             throw error
+        } finally {
+            activeSync = null
         }
     }
 
@@ -406,6 +417,7 @@ class SyncEngine(context: Context) {
 
     companion object {
         private val lock = Mutex()
+        @Volatile private var activeSync: Job? = null
         private const val MAX_BATCHES = 8
         private const val MAX_PAYLOAD_BYTES = 2 * 1024 * 1024
     }

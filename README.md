@@ -4,6 +4,8 @@ React frontend, FastAPI backend, SQLite database, tenant-scoped local media, and
 
 Phase 2 adds authenticated MCP access, daily progress photos, date-level tracking, and adherence feedback.
 
+Phase 3 adds an Android app for device-data export, permission onboarding, hourly background sync, and the existing dashboard in a WebView. See the [Android setup and APK build guide](data_sync/README.md).
+
 ## Start
 
 From the repository root:
@@ -236,6 +238,33 @@ Revoke a token or authorized app in **Forma Settings → Connect your agent**. R
 Session-authenticated management endpoints are `GET/POST /api/mcp/tokens`, `DELETE /api/mcp/tokens/{id}`, `GET /api/mcp/connections`, and `DELETE /api/mcp/connections/{id}`. Token creation accepts `{"name":"My agent","expires_days":90}` with a 1–365 day expiry and shows the secret once. OAuth access tokens last one hour; refresh tokens rotate and expire after 30 days, and reuse revokes the connection.
 
 The transport follows the official [Python SDK v1 documentation](https://py.sdk.modelcontextprotocol.io/v1/) and [MCP authorization specification](https://modelcontextprotocol.io/specification/2025-06-18/basic/authorization).
+
+## Phase 3: Android data export and APK
+
+The Android app and companion server are in [`data_sync/native_app`](data_sync/native_app). The app uses existing Forma accounts, requests Android source permissions, exports available usage and health records, and opens the current dashboard. Uploads use a session token; the password is used only at login. Hourly uploads run on the device through WorkManager and can be delayed by Android power management.
+
+To generate an installable standalone preview APK after configuring Node, JDK 17 and the Android SDK:
+
+```sh
+# From the repository root
+cd data_sync/native_app
+npm ci
+npm run build:apk
+```
+
+The generated file is `data_sync/native_app/android/app/build/outputs/apk/preview/app-preview.apk` relative to the repository root. It includes its JavaScript bundle, runs without Metro, and is signed with a local debug key for testing. Enter a reachable **HTTPS** server URL in this preview app. Production release builds need your own signing configuration.
+
+Start the companion server instead of the regular backend entry point when using Android exports. Run these commands from the repository root:
+
+```sh
+.venv/bin/python -m pip install -r data_sync/native_app/server/requirements.txt
+npm run build
+.venv/bin/python -m data_sync.native_app.server
+```
+
+The companion serves `/api/native/*` and the built dashboard from one origin, using the existing database and accounts. Expose it over HTTPS for the preview app and set `COOKIE_SECURE=true` for that deployment. The development build supports local HTTP and uses Metro.
+
+See [`data_sync/README.md`](data_sync/README.md) for prerequisites, SDK setup, Windows commands, APK installation, and troubleshooting. See the [native app README](data_sync/native_app/README.md) for available data sources, permissions, API details, and verification commands.
 
 ## Exercise and food guides
 

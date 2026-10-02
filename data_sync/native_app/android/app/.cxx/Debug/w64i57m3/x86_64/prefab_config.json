@@ -1,9 +1,0 @@
-{
-  "enabled": true,
-  "prefabPath": "/tmp/forma-gradle/caches/modules-2/files-2.1/com.google.prefab/cli/2.1.0/aa32fec809c44fa531f01dcfb739b5b3304d3050/cli-2.1.0-all.jar",
-  "packages": [
-    "/tmp/forma-gradle/caches/8.14.3/transforms/8b91260de7f10b32146fb4799f38150f/transformed/react-android-0.84.1-debug/prefab",
-    "/tmp/forma-gradle/caches/8.14.3/transforms/65b7d1e0711474d6f57bff52b8b39520/transformed/hermes-android-250829098.0.9-debug/prefab",
-    "/tmp/forma-gradle/caches/8.14.3/transforms/cd4e90f0a158905b46cd21114b80f914/transformed/fbjni-0.7.0/prefab"
-  ]
-}

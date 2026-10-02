@@ -1,9 +1,0 @@
-/home/creator-base/github/exercise_planner/data_sync/native_app/android/app/.cxx/Debug/w64i57m3/x86/CMakeFiles/appmodules.dir
-/home/creator-base/github/exercise_planner/data_sync/native_app/android/app/.cxx/Debug/w64i57m3/x86/CMakeFiles/edit_cache.dir
-/home/creator-base/github/exercise_planner/data_sync/native_app/android/app/.cxx/Debug/w64i57m3/x86/CMakeFiles/rebuild_cache.dir
-/home/creator-base/github/exercise_planner/data_sync/native_app/android/app/.cxx/Debug/w64i57m3/x86/safeareacontext_autolinked_build/CMakeFiles/react_codegen_safeareacontext.dir
-/home/creator-base/github/exercise_planner/data_sync/native_app/android/app/.cxx/Debug/w64i57m3/x86/safeareacontext_autolinked_build/CMakeFiles/edit_cache.dir
-/home/creator-base/github/exercise_planner/data_sync/native_app/android/app/.cxx/Debug/w64i57m3/x86/safeareacontext_autolinked_build/CMakeFiles/rebuild_cache.dir
-/home/creator-base/github/exercise_planner/data_sync/native_app/android/app/.cxx/Debug/w64i57m3/x86/RNCWebViewSpec_autolinked_build/CMakeFiles/react_codegen_RNCWebViewSpec.dir
-/home/creator-base/github/exercise_planner/data_sync/native_app/android/app/.cxx/Debug/w64i57m3/x86/RNCWebViewSpec_autolinked_build/CMakeFiles/edit_cache.dir
-/home/creator-base/github/exercise_planner/data_sync/native_app/android/app/.cxx/Debug/w64i57m3/x86/RNCWebViewSpec_autolinked_build/CMakeFiles/rebuild_cache.dir

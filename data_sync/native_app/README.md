@@ -5,6 +5,10 @@ shared TypeScript screens, Kotlin collectors and persistent upload workers, and 
 companion entry point for the existing Forma server. Existing web and backend
 source files do not need modification. iOS is deferred.
 
+For tool installation, platform-specific build commands, and APK installation,
+see the [Android APK build guide](../README.md). The generated standalone test
+APK is available at [`../apk/forma-data-sync-preview.apk`](../apk/forma-data-sync-preview.apk).
+
 ## Run the server
 
 From the repository root, install the existing backend dependencies if needed,
@@ -30,10 +34,13 @@ Android emulators can reach a local host server at `http://10.0.2.2:8000`.
 
 ## Run Android
 
-Use Node 22.11+, JDK 17, Android SDK platform 36 / build tools 36.0.0, and NDK
-27.1.12297006. The app supports Android 8+ (API 26); Health Connect needs a
-supported device/provider, normally Android 9+ and the Health Connect app on
-Android 13 and earlier. Android 14+ integrates Health Connect into the system.
+Use Node 22.11+, JDK 17, Android SDK platform 36 / build tools 36.0.0, NDK
+27.1.12297006, and CMake 3.22.1. The app supports Android 8+ (API 26); Health
+Connect needs a supported device/provider, normally Android 9+ and the Health
+Connect app on Android 13 and earlier. Android 14+ integrates Health Connect
+into the system.
+
+From the repository root:
 
 ```bash
 cd data_sync/native_app
@@ -41,7 +48,8 @@ npm ci
 npm start
 ```
 
-In another terminal in this folder, with an emulator or USB debugging device:
+In another terminal, enter `data_sync/native_app` and run the following with an
+emulator or USB debugging device connected:
 
 ```bash
 npm run android
@@ -55,7 +63,7 @@ project does not ship a release private key.
 
 ### Install without Metro
 
-Create the self-contained preview APK:
+Create the self-contained preview APK, starting from the repository root:
 
 ```bash
 cd data_sync/native_app
@@ -63,6 +71,10 @@ npm ci
 npm run build:apk
 adb install -r android/app/build/outputs/apk/preview/app-preview.apk
 ```
+
+If already in this folder, omit `cd data_sync/native_app`. Windows users should
+run `gradlew.bat assemblePreview` from the `android` folder; see the
+[APK build guide](../README.md#build-on-windows) for the PowerShell commands.
 
 This preview contains the JavaScript bundle and Hermes bytecode and runs without
 the Metro development server. It uses Android's local debug signing key and a
@@ -84,7 +96,9 @@ configure your own signing key when distributing a release.
 4. The dashboard opens the current Forma web app inside a WebView using the same
    HttpOnly session cookie. Native controls show last upload/error and provide
    Sync now, Pause/Resume, and Data settings. Sign out cancels work and clears the
-   session, pending local batch and WebView cookies.
+   session, pending local batch and WebView cookies. Signing out inside the web
+   dashboard also stops the native connection; expired dashboard API sessions
+   return the app to login.
 
 The schedule runs **on the Android device**, because a server cron cannot wake a
 phone and access its local usage APIs. WorkManager persists jobs across process
@@ -146,6 +160,10 @@ Android Keystore AES-GCM protects the local session state and persisted retry
 batch. Backups are disabled. A batch has a stable random UUID and is saved before
 upload; retries reuse it. A source's cursor advances only after the server
 acknowledges that exact batch. Denied/incomplete sources keep their own cursor.
+Pause and sign-out cancel active sync requests. Before each upload, the app checks
+the current session, account, device and permissions again, including the allowed
+health history boundary. A queued batch that exceeds newly revoked access is
+discarded and recollected from permitted sources.
 Source collection is paginated and bounded; overflow is reported rather than
 silently discarded. Oversized exports shrink their time window, and an
 irreducibly oversized source is reported with an error while other sources
@@ -208,6 +226,7 @@ npm test
 npm run bundle:android
 cd android
 ./gradlew :app:compileDebugKotlin :app:testDebugUnitTest
+./gradlew :app:lintPreview :app:assemblePreview
 
 # From repository root
 .venv/bin/python -m pytest data_sync/native_app/server/tests -q
