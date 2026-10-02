@@ -69,47 +69,173 @@ The backend serves the official Python MCP SDK over Streamable HTTP at `http://1
 
 Dates use `YYYY-MM-DD`; omitted dates use the member profile timezone. Regeneration replaces the published plan only after review succeeds and archives the previous version. Poll the returned job until it completes, then fetch the current plan.
 
-### Local agent connection
+### Connect MCP to your agent
 
-Sign in to a member account, open **Settings → Connect your agent**, and create a personal access token. Copy it immediately; only its hash is stored. Tokens expire and can be revoked in Settings. Credentials remain outside frontend bundles.
+Choose the instructions for your client:
 
-For Claude Code using HTTP, run the backend and add it as a project-local MCP server:
+| Agent | Connection | Authentication | Setup |
+| --- | --- | --- | --- |
+| Claude Code / Claude CLI | Local or hosted Streamable HTTP | Personal access token or OAuth | [Claude Code](#claude-code--claude-cli) |
+| Claude Desktop, local server | Included stdio proxy to the running backend | Personal access token | [Claude Desktop](#claude-desktop-local-connection) |
+| ChatGPT | Hosted HTTPS MCP endpoint | OAuth with automatic client registration | [ChatGPT](#chatgpt-connection) |
+| Claude.ai / Claude Desktop, remote connector | Hosted HTTPS MCP endpoint | OAuth with automatic client registration | [Remote Claude](#claudeai--claude-desktop-remote-connection) |
+| Other agents with stdio support | Included stdio proxy | Personal access token | Use the [Desktop JSON configuration](#claude-desktop-local-connection) in your client's MCP settings |
+
+#### Before connecting
+
+1. Install the backend dependencies and start Forma from the repository root:
+
+   ```sh
+   .venv/bin/pip install -r backend/requirements.txt
+   .venv/bin/python -m backend.server
+   ```
+
+2. Sign in to Forma as a **member** and complete onboarding. Administrators and administrator impersonation sessions cannot create MCP credentials.
+3. For token-based connections, open **Settings → Connect your agent → Create connection token**. Copy the token immediately; it is shown once. Use a separate named token for each client. OAuth connections use Forma's sign-in and consent page instead.
+
+The local server URL is `http://127.0.0.1:8000/mcp`. The client process must be able to reach that address. For an agent running in another container or machine, provide a reachable HTTPS backend URL. The frontend at port 5173 is not required for MCP tool calls.
+
+#### Claude Code / Claude CLI
+
+**Local HTTP with a personal access token**
+
+Run these commands in your project directory using Bash. Paste the token created in Forma when prompted:
 
 ```sh
-read -rsp 'Forma token: ' FORMA_MCP_TOKEN; export FORMA_MCP_TOKEN
-claude mcp add --transport http forma http://127.0.0.1:8000/mcp \
+read -rsp 'Forma token: ' FORMA_MCP_TOKEN
+export FORMA_MCP_TOKEN
+claude mcp add --scope local --transport http forma http://127.0.0.1:8000/mcp \
   --header "Authorization: Bearer $FORMA_MCP_TOKEN"
+claude mcp list
 ```
 
-Claude stores configured headers in its MCP configuration; keep that file private. Agents supporting stdio can instead launch the included proxy with credentials supplied through the process environment:
+Start `claude`, enter `/mcp`, and confirm that `forma` is connected. Ask: "Use Forma to show my plan for today."
 
-```json
-{
-  "mcpServers": {
-    "forma": {
-      "command": "/absolute/path/to/exercise_planner/.venv/bin/python",
-      "args": ["-m", "backend.mcp_server", "--stdio"],
-      "cwd": "/absolute/path/to/exercise_planner",
-      "env": {
-        "FORMA_MCP_URL": "http://127.0.0.1:8000/mcp",
-        "FORMA_MCP_TOKEN": "YOUR_PERSONAL_ACCESS_TOKEN"
-      }
-    }
-  }
-}
+`--scope local` keeps the connection specific to this project in your local Claude configuration. Claude saves the configured header, so keep that configuration private. For a hosted backend, replace the loopback URL with its HTTPS `/mcp` URL. See the official [Claude Code MCP guide](https://code.claude.com/docs/en/mcp).
+
+**OAuth alternative**
+
+For a browser sign-in connection, add an HTTP server without a token header. This example uses a separate connection name:
+
+```sh
+claude mcp add --scope local --transport http forma-oauth https://your-backend.example/mcp
+claude mcp login forma-oauth
 ```
 
-For clients without a `cwd` configuration option, add `PYTHONPATH` set to the repository's absolute path in `env`. The stdio process forwards requests to the running backend; start the backend first. It creates no separate database, and stdout contains only MCP messages.
+Sign in as a Forma member and approve access. You can also start authentication from `/mcp` inside Claude Code. Local Claude Code can use `http://127.0.0.1:8000/mcp` with OAuth as well. Follow the [remote backend setup](#prepare-a-hosted-backend) when using HTTPS.
 
-### Remote ChatGPT / Claude connection
+#### Claude Desktop: local connection
 
-Remote hosted agents require a reachable HTTPS backend; a localhost URL is only usable by local agents. Deploy behind HTTPS and set `FORMA_PUBLIC_URL=https://your-backend.example` and `COOKIE_SECURE=true`. Configure your reverse proxy to route `/mcp`, `/oauth/*`, and `/.well-known/*` to FastAPI. Use `https://your-backend.example/mcp` as the remote MCP URL in a client that supports custom MCP connectors.
+Claude Desktop can launch Forma's stdio proxy on your computer. Keep the FastAPI backend running separately.
 
-The service advertises protected-resource and authorization-server discovery, supports dynamic client registration, and serves a Forma login/consent page. Sign in as a member and explicitly approve the client. Authorization uses exact registered redirects, authorization-code flow with S256 PKCE, and resource-bound credentials. Access tokens last one hour. Refresh tokens rotate and expire after 30 days; reuse revokes the connection. Settings lists OAuth connections and can revoke them immediately. Client registration supports public clients (`none`) and confidential clients (`client_secret_post` / `client_secret_basic`). Feature availability and connector setup depend on the agent product and account; the server does not deploy itself or enable remote account features.
+1. In Claude Desktop, open **Settings → Developer → Edit Config**.
+2. Merge the following `forma` entry into the existing `mcpServers` object. Replace both absolute paths and `YOUR_PERSONAL_ACCESS_TOKEN` with your own values:
 
-Session-authenticated management endpoints are `GET/POST /api/mcp/tokens`, `DELETE /api/mcp/tokens/{id}`, `GET /api/mcp/connections`, and `DELETE /api/mcp/connections/{id}`. Token creation accepts `{"name":"My agent","expires_days":90}` with a 1–365 day expiry and shows the secret once. MCP requests always use `Authorization: Bearer <token>`.
+   ```json
+   {
+     "mcpServers": {
+       "forma": {
+         "command": "/absolute/path/to/exercise_planner/.venv/bin/python",
+         "args": ["-m", "backend.mcp_server", "--stdio"],
+         "env": {
+           "PYTHONPATH": "/absolute/path/to/exercise_planner",
+           "FORMA_MCP_URL": "http://127.0.0.1:8000/mcp",
+           "FORMA_MCP_TOKEN": "YOUR_PERSONAL_ACCESS_TOKEN"
+         }
+       }
+     }
+   }
+   ```
 
-The transport follows the official [Python SDK v1 documentation](https://py.sdk.modelcontextprotocol.io/v1/) and [MCP authorization specification](https://modelcontextprotocol.io/specification/2025-06-18/basic/authorization). Local Claude configuration follows the [Claude Code MCP guide](https://code.claude.com/docs/en/mcp). ChatGPT setup follows the official [connection guide](https://developers.openai.com/plugins/deploy/connect-chatgpt).
+3. Save the configuration, fully quit Claude Desktop, and reopen it.
+4. Open the chat's **+ → Connectors → Manage connectors** menu and confirm Forma is available. Enable it and ask for today's plan.
+
+The configuration file is `~/Library/Application Support/Claude/claude_desktop_config.json` on macOS and `%APPDATA%\Claude\claude_desktop_config.json` on Windows. On Windows, use the virtual environment's `.venv\Scripts\python.exe` and escape backslashes in JSON, for example `"C:\\Projects\\exercise_planner\\.venv\\Scripts\\python.exe"`.
+
+`PYTHONPATH` lets Python find `backend.mcp_server` regardless of the client's working directory. Set the credentials in the client's `env` configuration; the proxy does not load them from Forma's `.env` file. Keep the configuration containing the token private. The proxy forwards calls to the running backend and creates no separate database. See the official [local MCP server connection guide](https://modelcontextprotocol.io/docs/develop/connect-local-servers).
+
+#### Prepare a hosted backend
+
+Use this setup for the public HTTPS connections below:
+
+1. Serve the FastAPI backend through HTTPS at an origin such as `https://your-backend.example`.
+2. Set these backend environment values, then restart the backend:
+
+   ```dotenv
+   FORMA_PUBLIC_URL=https://your-backend.example
+   COOKIE_SECURE=true
+   FRONTEND_URL=https://your-frontend.example
+   ```
+
+   `FORMA_PUBLIC_URL` is the backend origin, without `/mcp` or another path. Set `FRONTEND_URL` to the actual frontend origin; it may be the same as the backend origin.
+
+3. Route `/mcp`, `/oauth/*`, and `/.well-known/*` through the reverse proxy to FastAPI, preserving the host, authorization header, request methods, and bodies.
+4. Check discovery from outside your local network:
+
+   ```sh
+   curl --fail https://your-backend.example/.well-known/oauth-protected-resource/mcp
+   curl --fail https://your-backend.example/.well-known/oauth-authorization-server
+   ```
+
+   The metadata must advertise `https://your-backend.example/mcp` as the resource and the same public backend origin for its OAuth endpoints.
+
+The client URL is **`https://your-backend.example/mcp`**. Forma supports dynamic client registration (DCR) and OAuth authorization-code flow with S256 PKCE. Choose automatic registration when the client offers registration choices. Its OAuth scope is `forma:mcp`; client IDs and secrets are created during registration.
+
+#### ChatGPT connection
+
+1. Complete the [hosted backend setup](#prepare-a-hosted-backend).
+2. In ChatGPT on the web, open **Settings → Security and login** and enable **Developer mode**. Availability depends on your account and workspace policy.
+3. Open [ChatGPT Plugins](https://chatgpt.com/plugins) and select the **plus** button to add a developer-mode MCP connection.
+4. Enter a name such as **Forma**, a description, and the public server URL `https://your-backend.example/mcp`.
+5. Select **OAuth** authentication. If registration options are shown, choose **DCR / dynamic client registration**. Forma advertises its registration endpoint; you do not need to invent a client ID or paste a Forma personal token into an OAuth client-secret field.
+6. Create the connection, sign in on Forma's consent page as a member, and approve access. Review the eight discovered tools.
+7. Start a new conversation, add Forma from the tools menu, and ask: "Use Forma to summarize my progress and show today's plan."
+
+Follow the official [ChatGPT connection instructions](https://developers.openai.com/plugins/deploy/connect-chatgpt) and [OAuth registration guidance](https://developers.openai.com/plugins/build/auth). For private-network access, OpenAI also documents [Secure MCP Tunnel](https://developers.openai.com/api/docs/guides/secure-mcp-tunnels); that requires a separately configured tunnel.
+
+#### Claude.ai / Claude Desktop: remote connection
+
+This connection reaches Forma from Claude's hosted service, including when you add it from Desktop. Use the public HTTPS URL from the [hosted backend setup](#prepare-a-hosted-backend).
+
+1. Open **Customize → Connectors → + Add → Add custom connector**.
+2. Set the name to **Forma** and the remote MCP URL to `https://your-backend.example/mcp`.
+3. Under authentication, choose **Sign in now** and select **Register automatically** as the OAuth client identity. Forma supports DCR; the **Use Claude's published identity** option requires client metadata support that this server does not implement.
+4. Finish adding the connector, sign in as a Forma member, and approve access.
+5. Enable Forma in a conversation through **+ → Connectors**, then ask for today's plan.
+
+Team and Enterprise workspaces may require an owner to add or enable the connector before members connect their own accounts. See the official [Claude remote connector guide](https://support.claude.com/en/articles/11175166-get-started-with-custom-connectors-using-remote-mcp).
+
+#### Verify the connection and use the tools
+
+After connecting, try these requests:
+
+- "Show my workout and meal plan for today, including task IDs."
+- "Mark task `<task_id>` completed for `<YYYY-MM-DD>` and show my updated progress."
+- "Show detailed tracking for `<YYYY-MM-DD>`."
+- "Regenerate my next 14 days, wait for the planning job to finish, and show the reviewed plan."
+- "Analyze the progress photos I saved in Forma for today together with my adherence."
+
+Regeneration returns a queued job; the agent should poll `get_planning_job` before fetching the new plan. Uploading a photo through MCP requires the agent to supply the image bytes as plain base64; a chat attachment is saved in Forma only when the agent calls `upload_progress_photo`. Uploads return tracking feedback, and `analyze_progress_photos` requests the separate visual review.
+
+#### Troubleshooting and disconnecting
+
+| Symptom | What to check |
+| --- | --- |
+| Connection refused | Keep the backend running. For the local proxy, verify `FORMA_MCP_URL` and that the client can reach port 8000. |
+| ChatGPT or remote Claude cannot reach the server | Use the public HTTPS `/mcp` URL and check external access to the OAuth discovery routes. Loopback URLs refer to the remote service's own machine. |
+| `401 Unauthorized` | For a token connection, provide `Authorization: Bearer <token>` and check expiry/revocation. For OAuth, reconnect and complete consent. |
+| `403 Forbidden` | Sign in directly as a member. For an origin error, verify the backend's `FORMA_PUBLIC_URL` and `FRONTEND_URL` values. |
+| `421 Misdirected Request` | Set `FORMA_PUBLIC_URL` to the hostname actually used by the client, preserve the host at the proxy, and restart the backend. |
+| OAuth client or registration error | Select automatic registration / DCR. For remote Claude, use **Register automatically**. |
+| Desktop proxy immediately exits or cannot find `backend` | Check the absolute Python path, `PYTHONPATH`, token in `env`, and separately running backend. |
+| Tools are missing after an update | Refresh the connection's tool metadata or reconnect, then start a new conversation. |
+| Credentials stop working after changing the public URL | Tokens are bound to the MCP resource URL. Create a new token or authorize the OAuth connection again. |
+
+Revoke a token or authorized app in **Forma Settings → Connect your agent**. Remove the Claude Code configuration with `claude mcp remove forma` (or `forma-oauth`); for Desktop, remove only the Forma entry and restart. Removing client configuration alone does not revoke its credential in Forma.
+
+Session-authenticated management endpoints are `GET/POST /api/mcp/tokens`, `DELETE /api/mcp/tokens/{id}`, `GET /api/mcp/connections`, and `DELETE /api/mcp/connections/{id}`. Token creation accepts `{"name":"My agent","expires_days":90}` with a 1–365 day expiry and shows the secret once. OAuth access tokens last one hour; refresh tokens rotate and expire after 30 days, and reuse revokes the connection.
+
+The transport follows the official [Python SDK v1 documentation](https://py.sdk.modelcontextprotocol.io/v1/) and [MCP authorization specification](https://modelcontextprotocol.io/specification/2025-06-18/basic/authorization).
 
 ## Exercise and food guides
 
