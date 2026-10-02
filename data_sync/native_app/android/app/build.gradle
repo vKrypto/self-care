@@ -4,8 +4,8 @@ apply plugin: 'com.facebook.react'
 
 react {
     autolinkLibrariesWithApp()
-    // Only the development build loads JavaScript from Metro. The preview APK
-    // includes its bundle and Hermes bytecode, just like a release build.
+    // Only debug loads JavaScript from Metro. Preview and LAN APKs include their
+    // bundle and Hermes bytecode, just like a release build.
     debuggableVariants = ['debug']
 }
 
@@ -18,8 +18,9 @@ android {
         applicationId 'com.forma.datasync'
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 3
-        versionName '0.3.0'
+        versionCode 4
+        versionName '0.3.1'
+        buildConfigField 'boolean', 'ALLOW_LAN_HTTP', 'false'
     }
     buildTypes {
         debug { }
@@ -35,6 +36,15 @@ android {
             applicationIdSuffix '.preview'
             versionNameSuffix '-preview'
             resValue 'string', 'app_name', 'Forma Data Sync Preview'
+        }
+        lan {
+            initWith release
+            signingConfig signingConfigs.debug
+            matchingFallbacks = ['release']
+            applicationIdSuffix '.preview'
+            versionNameSuffix '-lan-preview'
+            buildConfigField 'boolean', 'ALLOW_LAN_HTTP', 'true'
+            resValue 'string', 'app_name', 'Forma Data Sync LAN Preview'
         }
     }
     compileOptions {

@@ -15,6 +15,7 @@ import com.facebook.react.bridge.WritableArray
 import com.facebook.react.bridge.WritableMap
 import com.facebook.react.modules.core.PermissionAwareActivity
 import com.facebook.react.modules.core.PermissionListener
+import com.forma.datasync.BuildConfig
 import com.forma.datasync.collectors.HealthPermissions
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -44,6 +45,7 @@ class FormaDataSyncModule(private val context: ReactApplicationContext) : ReactC
 
     init { context.addActivityEventListener(activityListener) }
     override fun getName() = "FormaDataSync"
+    override fun getConstants(): Map<String, Any> = mapOf("allowLanHttp" to BuildConfig.ALLOW_LAN_HTTP)
 
     @ReactMethod fun restoreSession(promise: Promise) = resolve(promise) { engine.restoreSession() }
     @ReactMethod fun login(serverUrl: String, email: String, password: String, promise: Promise) =

@@ -2,6 +2,7 @@ import {NativeModules} from 'react-native';
 import type {HistoryDetails, HistoryPage, HistoryRecordsPage, Permissions, Session, SyncStatus} from './types';
 
 interface DataSyncModule {
+  readonly allowLanHttp: boolean;
   restoreSession(): Promise<Session | null>;
   login(serverUrl: string, email: string, password: string): Promise<Session>;
   permissionStatus(): Promise<Permissions>;

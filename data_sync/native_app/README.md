@@ -28,9 +28,39 @@ apply. Set `NATIVE_PORT` / `NATIVE_HOST` to change the listener; set
 dashboard before starting the companion process so its assets are mounted.
 
 In production, expose this server over HTTPS and set `COOKIE_SECURE=true`.
-The app accepts HTTP only in debug builds. A phone needs your server's reachable
+The app accepts HTTP in debug builds and the explicit LAN test variant. A phone needs your server's reachable
 LAN address or HTTPS hostname; `localhost` on the phone refers to the phone.
-Android emulators can reach a local host server at `http://10.0.2.2:8000`.
+Android emulators can reach a local host server at `http://10.0.2.2:8000`
+using debug or LAN builds.
+
+### Connect a phone on the same LAN
+
+Start the companion API above, then open
+`http://<computer-LAN-IP>:8000/api/health` from the phone's browser. Use the
+computer's active Ethernet/Wi-Fi IPv4 address; `localhost` on the phone points
+back to the phone. If the browser cannot connect, check the computer's firewall
+and router client isolation.
+
+For local HTTP without Metro, build and install the **LAN preview**:
+
+```bash
+# From data_sync/native_app
+npm run build:apk:lan
+adb install -r android/app/build/outputs/apk/lan/app-lan.apk
+```
+
+Enter `http://<computer-LAN-IP>:8000` as the server origin, then your existing
+Forma email and password. Login remains optional for collection. This variant
+accepts HTTP only to literal private IPv4 addresses in `10.0.0.0/8`,
+`172.16.0.0/12`, and `192.168.0.0/16`; public addresses and HTTP hostnames are
+rejected. HTTP leaves credentials and uploads unencrypted in transit, so this
+build is for testing on a trusted LAN. Keep `COOKIE_SECURE=false` for HTTP.
+The normal preview and release still require HTTPS.
+
+The LAN build has the same application ID and signing key as preview, preserving
+local records when installed as an update. The generated download is
+[`../apk/forma-data-sync-lan-preview.apk`](../apk/forma-data-sync-lan-preview.apk).
+For Windows, run `gradlew.bat assembleLan` from the `android` folder.
 
 ## Run Android
 
@@ -80,8 +110,8 @@ This preview contains the JavaScript bundle and Hermes bytecode and runs without
 the Metro development server. It uses Android's local debug signing key and a
 separate `com.forma.datasync.preview` application ID, so it can be installed
 alongside the development app. Local collection needs no server. Connecting the
-preview app requires an HTTPS server URL; use the development build above for a
-local HTTP server. The preview key is for testing;
+preview app requires an HTTPS server URL; use the LAN preview or the development
+build above for a local HTTP server. The preview key is for testing;
 configure your own signing key when distributing a release.
 
 ## Flow
@@ -297,10 +327,13 @@ pause/resume. Sync history checks covered importing existing queued batches,
 manual and background job entries, opening actual app metadata records,
 loading additional record pages, denied-source summaries, Android Back
 navigation, and preserving history after a process restart. The current checks
-passed 70 Android unit tests and 19 TypeScript tests; Android lint reported no
+passed 77 Android unit tests and 23 TypeScript tests; Android lint reported no
 errors. Automated checks cover archive retention and acknowledgements, queue
 recovery, ownership, permissions, and lifecycle routing. A real server upload
-was not part of this device check; server ingestion has separate tests. Health
+was not part of this device check; server ingestion has separate tests. The LAN
+variant's private-address validation, standalone bundle, signing compatibility,
+and variant-specific transport settings were checked; installed-device LAN
+login still needs verification. Health
 Connect categories still need validation on a phone with populated records.
 
 Further device validation should cover a real Android phone with populated usage and

@@ -268,6 +268,8 @@ npm run build
 
 The companion serves `/api/native/*` and the built dashboard from one origin, using the existing database and accounts. Expose it over HTTPS for the preview app and set `COOKIE_SECURE=true` for that deployment. The development build supports local HTTP and uses Metro.
 
+For a phone on the same trusted LAN, `npm run build:apk:lan` from `data_sync/native_app` creates a standalone LAN test APK at `android/app/build/outputs/apk/lan/app-lan.apk`. This variant accepts HTTP to private IPv4 addresses such as `http://192.168.1.50:8000`, runs without Metro, and updates the preview app while preserving local records. HTTP does not encrypt credentials or uploaded data; regular preview and release builds still require HTTPS. Keep `COOKIE_SECURE=false` for local HTTP.
+
 See [`data_sync/README.md`](data_sync/README.md) for prerequisites, SDK setup, Windows commands, APK installation, and troubleshooting. See the [native app README](data_sync/native_app/README.md) for available data sources, permissions, API details, and verification commands.
 
 ## Exercise and food guides

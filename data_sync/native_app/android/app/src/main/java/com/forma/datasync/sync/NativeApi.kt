@@ -6,7 +6,6 @@ import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import java.net.HttpURLConnection
-import java.net.URI
 import java.net.URL
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
@@ -67,17 +66,7 @@ class NativeApi(private val serverUrl: String, private val token: String? = null
     }
 
     companion object {
-        fun normalizeServerUrl(value: String): String {
-            val uri = try { URI(value.trim()) } catch (_: Exception) {
-                throw IllegalArgumentException("Enter a valid server URL, including https://.")
-            }
-            require(!uri.host.isNullOrBlank() && uri.userInfo == null && uri.query == null && uri.fragment == null && (uri.path.isNullOrEmpty() || uri.path == "/")) {
-                "Enter a server URL without a path, credentials, query parameters, or a fragment."
-            }
-            require(uri.scheme == "https" || (BuildConfig.DEBUG && uri.scheme == "http")) {
-                "Use HTTPS for the server URL. HTTP is available in debug builds only."
-            }
-            return uri.toASCIIString().trimEnd('/')
-        }
+        fun normalizeServerUrl(value: String): String =
+            ServerUrlPolicy.normalize(value, BuildConfig.DEBUG, BuildConfig.ALLOW_LAN_HTTP)
     }
 }

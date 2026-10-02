@@ -28,6 +28,15 @@ emulator uses `http://10.0.2.2:8000`. Create a member account in the existing UI
 before signing in on the phone. Set a server URL containing only its origin,
 for example `https://forma.example.com`.
 
+The regular standalone Android preview requires HTTPS. For a physical phone
+using a local URL such as `http://192.168.1.50:8000`, install the standalone
+**LAN preview** described in the [APK guide](../../README.md). It accepts
+HTTP only to literal private IPv4 addresses and runs without Metro. HTTP
+transmits credentials and records without encryption; use it only for testing
+on a trusted LAN and keep `COOKIE_SECURE=false` for its dashboard session.
+Open `/api/health` in the phone's browser to check connectivity, then enter only
+the origin in the Android app.
+
 Login and server setup are optional for local Android collection. Connecting an
 account authorizes uploads of anonymous queued records; records already assigned
 to another account cannot be uploaded through the current account. Signing out

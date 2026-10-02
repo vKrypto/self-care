@@ -14,6 +14,8 @@ import {isDashboardNavigationAllowed, normalizeServerUrl} from './validation';
 
 const CONSENT = 'I agree to upload the device usage, calendar, location and health data I grant access to, including sensitive health categories, to my configured Forma server. I can revoke permissions or pause uploads at any time.';
 const LOCAL_CONSENT = 'I agree to collect the device usage, calendar, location and health data I grant access to, including sensitive health categories, and store it encrypted on this device. I can revoke permissions or pause collection at any time.';
+const ALLOW_LAN_HTTP = dataSync.allowLanHttp === true;
+const HTTP_NOTICE = 'HTTP has no in-transit encryption: your sign-in details and uploaded data can be read on the network. Use it only on a trusted LAN for testing, or use HTTPS.';
 
 function Button({title, onPress, disabled = false, secondary = false}: {
   title: string; onPress: () => void; disabled?: boolean; secondary?: boolean;
@@ -133,7 +135,7 @@ function Content() {
   };
 
   const login = () => perform(async () => {
-    const origin = normalizeServerUrl(serverUrl, __DEV__);
+    const origin = normalizeServerUrl(serverUrl, __DEV__, ALLOW_LAN_HTTP);
     if (!email.trim() || !password) { throw new Error('Enter your email and password.'); }
     authRevision.current++;
     const saved = await dataSync.login(origin, email.trim().toLowerCase(), password);
@@ -263,8 +265,9 @@ function Content() {
           onPress={() => { setShowSignIn(false); setConsent(false); setLocalConsent(false); setSettings(!status?.onboarded); setError(''); }} />
         <View style={styles.card}>
           <Text style={styles.label}>Server URL</Text>
-          <TextInput accessibilityLabel="Server URL" value={serverUrl} onChangeText={setServerUrl} editable={!busy} style={styles.input} autoCapitalize="none" autoCorrect={false} keyboardType="url" placeholder="https://forma.example.com" placeholderTextColor="#8b938d" />
-          <Text style={styles.hint}>Enter the HTTPS address of your Forma server.{__DEV__ ? ' For an emulator development build, use http://10.0.2.2:8000.' : ''}</Text>
+          <TextInput accessibilityLabel="Server URL" value={serverUrl} onChangeText={setServerUrl} editable={!busy} style={styles.input} autoCapitalize="none" autoCorrect={false} keyboardType="url" placeholder={ALLOW_LAN_HTTP ? 'http://192.168.1.10:8000' : 'https://forma.example.com'} placeholderTextColor="#8b938d" />
+          <Text style={styles.hint}>{ALLOW_LAN_HTTP ? 'LAN test build: use http://YOUR-COMPUTER-LAN-IP:8000 with a private IPv4 address. HTTPS also works.' : `Enter the HTTPS address of your Forma server.${__DEV__ ? ' For an emulator development build, use http://10.0.2.2:8000.' : ''}`}</Text>
+          {(ALLOW_LAN_HTTP || __DEV__) && /^http:/i.test(serverUrl.trim()) && <Text style={styles.errorText}>{HTTP_NOTICE}</Text>}
           <Text style={styles.label}>Email</Text>
           <TextInput accessibilityLabel="Email" value={email} onChangeText={setEmail} editable={!busy} style={styles.input} autoCapitalize="none" autoCorrect={false} keyboardType="email-address" autoComplete="email" placeholder="you@example.com" placeholderTextColor="#8b938d" />
           <Text style={styles.label}>Password</Text>
@@ -279,6 +282,7 @@ function Content() {
       <View style={styles.card}>
         {session && <>
           <Text style={styles.label}>Upload server</Text><Text style={styles.body}>{session.serverUrl}</Text>
+          {session.serverUrl.startsWith('http:') && <Text style={styles.errorText}>{HTTP_NOTICE}</Text>}
           <Text style={styles.hint}>Signed in as {session.user.email}. Data assigned to another account stays on this device and will only upload when that account reconnects.</Text>
         </>}
         <Text style={styles.label}>Initial history (days)</Text>

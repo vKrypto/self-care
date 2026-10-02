@@ -31,6 +31,15 @@ origin** (for example, `https://forma.example.com`) and your Forma email and
 password, then accept upload consent to connect. This APK includes its JavaScript
 bundle and runs without a Metro development server.
 
+For a server on the same local network, install the standalone
+[`apk/forma-data-sync-lan-preview.apk`](apk/forma-data-sync-lan-preview.apk)
+instead. This test build also accepts HTTP to private IPv4 addresses, such as
+`http://192.168.1.50:8000`. It updates the regular preview app using the same
+signing key and preserves its local collection data. HTTP does not encrypt
+passwords, tokens, or collected records in transit; use it only for testing on
+a trusted LAN. HTTPS remains available and is required by the regular preview
+and release builds.
+
 Collection runs hourly without a network requirement. Uploads run separately
 when the app has an authenticated server connection and network access. Signing
 out leaves local collection running; pause collection explicitly to stop it.
@@ -119,6 +128,19 @@ The resulting file is:
 data_sync/native_app/android/app/build/outputs/apk/preview/app-preview.apk
 ```
 
+To build the standalone LAN test variant instead, run this from
+`data_sync/native_app`:
+
+```bash
+npm run build:apk:lan
+adb install -r android/app/build/outputs/apk/lan/app-lan.apk
+```
+
+Both standalone variants use `com.forma.datasync.preview`, so installing one
+updates the other rather than creating a second app. The LAN variant bundles
+JavaScript and Hermes and does not need Metro. On Windows, use
+`.\gradlew.bat assembleLan` from `data_sync/native_app/android`.
+
 From the native app folder, install that new build with:
 
 ```bash
@@ -170,12 +192,22 @@ existing Forma web dashboard before signing in on the phone. The server origin
 must be reachable from the phone; `localhost` there refers to the phone itself.
 See the [server README](native_app/server/README.md) for configuration details.
 
+For a phone on the same LAN, use the **LAN preview APK** and enter
+`http://<computer-LAN-IP>:8000`. Keep the server running and allow inbound port
+8000 through the computer's firewall if needed. First open
+`http://<computer-LAN-IP>:8000/api/health` in the phone's browser to check
+connectivity. Enter only the origin in the app, without `/api`, `/docs`, or
+`/api/health`. Login uses an existing Forma account's email and password;
+the app receives its user ID from the server. For local HTTP, keep
+`COOKIE_SECURE=false` so the dashboard can use its session cookie.
+
 On Windows, replace `python3` with `python` and `.venv/bin/python` with
 `.venv\Scripts\python.exe` in those commands.
 
 ## Development and troubleshooting
 
-For a local HTTP server, use the development app: from `data_sync/native_app`,
+For a local HTTP server, use the standalone LAN test build above or the
+development app: from `data_sync/native_app`,
 run `npm start`, then run `npm run android` in another terminal in that same
 folder. The debug app requires Metro and uses `com.forma.datasync`, so it can
 coexist with the preview app. An Android emulator reaches your computer at
@@ -187,5 +219,5 @@ license errors, install the exact packages above and accept SDK licenses. Run
 `npm ci` inside `native_app` for missing JavaScript dependencies. If Android
 reports a signing mismatch when updating an APK built on another computer,
 uninstall the existing preview app and install again; uninstalling clears its
-local settings, session, and collected data. Enter an HTTPS origin for preview
+local settings, session, and collected data. Enter an HTTPS origin for regular preview
 connection errors and confirm that it serves `/api/native/*`.
