@@ -56,7 +56,21 @@ class FormaDataSyncModule(private val context: ReactApplicationContext) : ReactC
         engine.completeOnboarding(historyDays.toInt())
     }
 
+    @ReactMethod fun startCollection(historyDays: Double, promise: Promise) = resolve(promise) {
+        require(historyDays.isFinite() && historyDays % 1.0 == 0.0) { "Enter a whole number of history days." }
+        engine.startCollection(historyDays.toInt())
+    }
+
+    @ReactMethod fun collectNow(promise: Promise) = resolve(promise) {
+        val more = engine.collect(background = false)
+        if (more) CollectionScheduler.enqueue(context)
+        if (engine.status().optBoolean("enabled")) SyncScheduler.enqueue(context)
+        engine.status()
+    }
+
     @ReactMethod fun syncNow(promise: Promise) = resolve(promise) {
+        val collectingMore = engine.collect(background = false)
+        if (collectingMore) CollectionScheduler.enqueue(context)
         val more = engine.sync(background = false)
         if (more) SyncScheduler.enqueue(context)
         engine.status()
@@ -64,6 +78,8 @@ class FormaDataSyncModule(private val context: ReactApplicationContext) : ReactC
 
     @ReactMethod fun pauseSync(promise: Promise) = resolve(promise) { engine.pause() }
     @ReactMethod fun resumeSync(promise: Promise) = resolve(promise) { engine.resume() }
+    @ReactMethod fun pauseCollection(promise: Promise) = resolve(promise) { engine.pauseCollection() }
+    @ReactMethod fun resumeCollection(promise: Promise) = resolve(promise) { engine.resumeCollection() }
     @ReactMethod fun logout(promise: Promise) = resolve(promise) { engine.logout(); null }
 
     @ReactMethod fun openUsageSettings(promise: Promise) = openSettings(promise,

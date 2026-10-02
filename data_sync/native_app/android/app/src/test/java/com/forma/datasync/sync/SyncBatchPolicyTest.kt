@@ -6,7 +6,8 @@ import org.junit.Assert.assertEquals
 import org.junit.Test
 
 class SyncBatchPolicyTest {
-    private fun state() = JSONObject().put("enabled", true).put("token", "session")
+    private fun state() = JSONObject().put("enabled", true).put("connected", true)
+        .put("serverUrl", "https://example.test").put("token", "session")
         .put("deviceId", "device").put("user", JSONObject().put("id", "user"))
 
     private fun pending(queryStart: Long = 100, records: Boolean = true) = JSONObject()
@@ -24,20 +25,26 @@ class SyncBatchPolicyTest {
     @Test fun pausedAndExpiredSessionsCannotUploadAnAlreadyCollectedBatch() {
         assertEquals(SyncBatchPolicy.Decision.STOP, SyncBatchPolicy.decide(pending(), state().put("enabled", false), access()))
         assertEquals(SyncBatchPolicy.Decision.STOP, SyncBatchPolicy.decide(pending(), state().apply { remove("token") }, access()))
+        assertEquals(SyncBatchPolicy.Decision.STOP, SyncBatchPolicy.decide(pending(), state().put("connected", false), access()))
+    }
+
+    @Test fun anOwnedBatchCannotCrossServersWithTheSameUserId() {
+        val batch = pending().put("owner", JSONObject().put("serverUrl", "https://other.test").put("userId", "user"))
+        assertEquals(SyncBatchPolicy.Decision.STOP, SyncBatchPolicy.decide(batch, state(), access()))
     }
 
     @Test fun anotherAccountOrInstallationCannotReplayThePendingBatch() {
-        assertEquals(SyncBatchPolicy.Decision.RECOLLECT, SyncBatchPolicy.decide(pending(), state().put("user", JSONObject().put("id", "other")), access()))
-        assertEquals(SyncBatchPolicy.Decision.RECOLLECT, SyncBatchPolicy.decide(pending(), state().put("deviceId", "other"), access()))
+        assertEquals(SyncBatchPolicy.Decision.BLOCK, SyncBatchPolicy.decide(pending(), state().put("user", JSONObject().put("id", "other")), access()))
+        assertEquals(SyncBatchPolicy.Decision.BLOCK, SyncBatchPolicy.decide(pending(), state().put("deviceId", "other"), access()))
     }
 
     @Test fun revokedRecordPermissionInvalidatesTheQueuedBatch() {
         val permissions = access().put("health_steps", JSONObject().put("status", "denied"))
-        assertEquals(SyncBatchPolicy.Decision.RECOLLECT, SyncBatchPolicy.decide(pending(), state(), permissions))
+        assertEquals(SyncBatchPolicy.Decision.BLOCK, SyncBatchPolicy.decide(pending(), state(), permissions))
     }
 
     @Test fun revokedHistoryPermissionInvalidatesBroaderQueuedReads() {
-        assertEquals(SyncBatchPolicy.Decision.RECOLLECT, SyncBatchPolicy.decide(pending(), state(), access(historyGranted = false)))
+        assertEquals(SyncBatchPolicy.Decision.BLOCK, SyncBatchPolicy.decide(pending(), state(), access(historyGranted = false)))
     }
 
     @Test fun historyRevocationStillPermitsRecentReadsAndEmptyOldWindows() {
@@ -48,7 +55,7 @@ class SyncBatchPolicyTest {
     @Test fun missingCurrentHistoryBoundCannotAuthorizeHistoricalData() {
         val permissions = access(historyGranted = false)
         permissions.getJSONObject("health_status").getJSONObject("details").remove("history_read_start_ms")
-        assertEquals(SyncBatchPolicy.Decision.RECOLLECT, SyncBatchPolicy.decide(pending(), state(), permissions))
+        assertEquals(SyncBatchPolicy.Decision.BLOCK, SyncBatchPolicy.decide(pending(), state(), permissions))
     }
 
     @Test fun validPermissionsPreserveTheExactRetryPayload() {

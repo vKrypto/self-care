@@ -28,13 +28,19 @@ emulator uses `http://10.0.2.2:8000`. Create a member account in the existing UI
 before signing in on the phone. Set a server URL containing only its origin,
 for example `https://forma.example.com`.
 
-Hourly upload scheduling runs on the phone with Android WorkManager.
+Login and server setup are optional for local Android collection. Connecting an
+account authorizes uploads of anonymous queued records; records already assigned
+to another account cannot be uploaded through the current account. Signing out
+stops uploads while local collection continues.
+
+Hourly collection and upload scheduling run separately on the phone with Android WorkManager.
 Registration records the requested 60-minute schedule; server cron cannot
 collect data from a sleeping phone. WorkManager execution can be delayed by
 Doze, connectivity, force-stop or manufacturer battery policies. The server
 acknowledges a batch only after its database transaction commits. The device
-keeps the exact pending batch until it receives that acknowledgement, then
-advances its source cursors.
+keeps the exact queued batch until it receives that acknowledgement, then removes
+it from the local queue. Collection cursors advance after durable local storage,
+independently of the network or server acknowledgement.
 
 ## HTTP contract
 

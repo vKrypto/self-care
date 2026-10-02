@@ -12,9 +12,13 @@ interface DataSyncModule {
   openHealthSettings(): Promise<void>;
   openBackgroundLocationSettings(): Promise<void>;
   completeOnboarding(historyDays: number): Promise<Session>;
-  syncNow(): Promise<void>;
-  pauseSync(): Promise<void>;
-  resumeSync(): Promise<void>;
+  startCollection(historyDays: number): Promise<SyncStatus>;
+  collectNow(): Promise<SyncStatus>;
+  pauseCollection(): Promise<SyncStatus>;
+  resumeCollection(): Promise<SyncStatus>;
+  syncNow(): Promise<SyncStatus>;
+  pauseSync(): Promise<SyncStatus>;
+  resumeSync(): Promise<SyncStatus>;
   logout(): Promise<void>;
   status(): Promise<SyncStatus>;
 }

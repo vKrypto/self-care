@@ -19,14 +19,14 @@ object SyncNotifications {
         if (Build.VERSION.SDK_INT >= 33 && ContextCompat.checkSelfPermission(context,
                 Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) return
         val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        manager.createNotificationChannel(NotificationChannel(CHANNEL, "Data sync status", NotificationManager.IMPORTANCE_DEFAULT))
+        manager.createNotificationChannel(NotificationChannel(CHANNEL, "Data collection and sync status", NotificationManager.IMPORTANCE_DEFAULT))
         val launch = context.packageManager.getLaunchIntentForPackage(context.packageName) ?: return
         val intent = PendingIntent.getActivity(context, ID, launch,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
         manager.notify(ID, Notification.Builder(context, CHANNEL)
             .setSmallIcon(context.applicationInfo.icon)
-            .setContentTitle("Forma sync needs attention")
-            .setContentText("Open Forma to review your connection, permissions, or sign-in.")
+            .setContentTitle("Forma data collection needs attention")
+            .setContentText("Open Forma to review local storage, permissions, or your connection.")
             .setContentIntent(intent).setAutoCancel(true).setOnlyAlertOnce(true).build())
     }
 

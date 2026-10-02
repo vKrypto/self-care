@@ -16,6 +16,11 @@ import javax.crypto.spec.GCMParameterSpec
 class SecureStore(context: Context) {
     private val prefs = context.getSharedPreferences("forma_native_private", Context.MODE_PRIVATE)
     private val pendingFile = File(context.noBackupFilesDir, "forma_pending_batch.enc")
+    private val queueDirectory = File(context.noBackupFilesDir, "forma_local_batches")
+    private val localQueue: LocalBatchQueue
+        get() = localQueues.getOrPut(queueDirectory.absolutePath) {
+            LocalBatchQueue(queueDirectory, ::encrypt, ::decrypt)
+        }
 
     fun read(): JSONObject = synchronized(lock) {
         val value = prefs.getString("state", null) ?: return@synchronized JSONObject()
@@ -51,9 +56,30 @@ class SecureStore(context: Context) {
         Unit
     }
 
+    fun appendLocal(batch: JSONObject) = synchronized(lock) { localQueue.append(batch) }
+
+    fun nextLocal(
+        serverUrl: String,
+        userId: String,
+        deviceId: String,
+        excludeBatchIds: Set<String> = emptySet(),
+        canUpload: (JSONObject) -> Boolean = { true },
+    ): JSONObject? = synchronized(lock) { localQueue.next(serverUrl, userId, deviceId, excludeBatchIds, canUpload) }
+
+    fun removeLocal(batchId: String) = synchronized(lock) { localQueue.remove(batchId) }
+
+    fun localStats(serverUrl: String? = null, userId: String? = null): JSONObject = synchronized(lock) {
+        localQueue.stats(serverUrl, userId)
+    }
+
+    fun recoverLocalCursors(collectionEpoch: Long = 0): JSONObject = synchronized(lock) {
+        localQueue.recoverCursors(collectionEpoch)
+    }
+
     fun clear() = synchronized(lock) {
         check(prefs.edit().clear().commit()) { "Unable to clear the encrypted sync state." }
         clearPending()
+        localQueue.clear()
     }
 
     private fun key(): SecretKey {
@@ -85,5 +111,7 @@ class SecureStore(context: Context) {
     companion object {
         private const val KEY_ALIAS = "forma-native-v1"
         private val lock = Any()
+        // Workers and the bridge share lightweight owner/cursor metadata across polls.
+        private val localQueues = mutableMapOf<String, LocalBatchQueue>()
     }
 }

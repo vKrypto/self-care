@@ -1,8 +1,9 @@
 # Android data sync: build and install an APK
 
 The Android app and companion server live in [`native_app/`](native_app/).
-The app signs in to an existing Forma account, requests Android data access,
-uploads permitted data in the background, and opens the current dashboard.
+The app lets you skip login and collect permitted Android data locally. Sign in
+to an existing Forma account and connect a server to upload queued data in the
+background and open the current dashboard.
 See the [app README](native_app/README.md) for collectors, permissions, and the
 upload contract.
 
@@ -23,11 +24,19 @@ adb devices
 adb install -r data_sync/apk/forma-data-sync-preview.apk
 ```
 
-Open **Forma Data Sync Preview**, enter your reachable **HTTPS server origin**
-(for example, `https://forma.example.com`), and sign in with your Forma email and
-password. The server address is needed before login. Complete onboarding to
-choose data access and background settings. This APK includes its JavaScript
+Open **Forma Data Sync Preview** and choose **Skip login** to start local
+collection. Complete permission onboarding and choose your history range; no
+server is required. You can sign in later with a reachable **HTTPS server
+origin** (for example, `https://forma.example.com`) and your Forma email and
+password, then accept upload consent to connect. This APK includes its JavaScript
 bundle and runs without a Metro development server.
+
+Collection runs hourly without a network requirement. Uploads run separately
+when the app has an authenticated server connection and network access. Signing
+out leaves local collection running; pause collection explicitly to stop it.
+The encrypted queue is limited to 64 MiB and reports when full instead of
+discarding unuploaded records. Acknowledged uploads free queue space. Batches
+already assigned to another account remain local until that account reconnects.
 
 ## Build your own standalone APK
 
@@ -135,9 +144,10 @@ adb install -r app\build\outputs\apk\preview\app-preview.apk
 
 ## Start the companion server
 
-The app needs the native companion entrypoint, which serves the existing API,
-native upload endpoints, and built web dashboard together. From the repository
-root, create the Python environment if needed and run:
+Server sync needs the native companion entrypoint, which serves the existing
+API, native upload endpoints, and built web dashboard together. Local collection
+works without it. From the repository root, create the Python environment if
+needed and run:
 
 ```bash
 python3 -m venv .venv
@@ -171,5 +181,5 @@ license errors, install the exact packages above and accept SDK licenses. Run
 `npm ci` inside `native_app` for missing JavaScript dependencies. If Android
 reports a signing mismatch when updating an APK built on another computer,
 uninstall the existing preview app and install again; uninstalling clears its
-local settings, session, and pending uploads. Enter an HTTPS origin for preview
+local settings, session, and collected data. Enter an HTTPS origin for preview
 connection errors and confirm that it serves `/api/native/*`.

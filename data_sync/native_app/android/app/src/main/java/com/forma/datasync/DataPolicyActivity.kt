@@ -15,17 +15,17 @@ class DataPolicyActivity : Activity() {
             text = """
                 Forma Data Connect — data permissions
 
-                You choose the server and which sources Android allows this app to read. After you accept consent in onboarding, granted data is uploaded to that server with your account and a random device identifier. The server operator controls retention of uploaded data.
+                You choose which sources Android allows this app to read. You can skip login and collect permitted data locally without a server. After you sign in and accept upload consent in connection settings, queued data is uploaded to your chosen server with your account and a random device identifier. The server operator controls retention of uploaded data.
 
                 Usage Access allows app foreground summaries, activity and screen/unlock events, and network usage. Calendar permission reads event titles, times and locations. Location permission reads available location snapshots; background location enables those snapshots while the UI is closed. Activity recognition permits a brief step-counter sensor snapshot, which is not a full activity history.
 
                 Health Connect lets you select steps, sleep and stages, workouts, calories, nutrition, hydration, heart and respiratory measures, blood pressure/glucose/oxygen, temperature, body measurements, reproductive health, and other supported categories. We read only granted records already stored in Health Connect. Optional background and history permissions allow background reads and records older than 30 days, where supported. No health records are written.
 
-                Hourly uploads are scheduled on the phone using Android WorkManager and may be delayed by power management or lack of a network. No private messages, passwords, other applications' private files, or lifetime device history are read.
+                Hourly collection is scheduled on the phone using Android WorkManager and does not require a network. Uploads are scheduled separately and require a connected account and network. Power management may delay background jobs. No private messages, passwords, other applications' private files, or lifetime device history are read.
 
-                Your password is sent only at sign-in. The session credential and pending upload are protected using Android Keystore encryption, excluded from backup, and removed on sign-out. Uploads require HTTPS in release builds.
+                Your password is sent only at sign-in. The session credential and local data queue are protected using Android Keystore encryption and excluded from backup. Signing out removes the session credential and preserves local data. The encrypted queue is limited to 64 MiB; if it fills, collection waits for space and reports an error instead of deleting unuploaded records. Acknowledged uploads are removed from the local queue. Uploads require HTTPS in release builds.
 
-                Pause uploads in the dashboard data controls. Review or revoke sources in Android app permissions, Usage Access or Health Connect settings. Sign out to cancel future work and clear this app's local connection. Permission revocation and sign-out do not delete data already received by your server; contact that server's operator to request deletion.
+                Pause collection and uploads separately in the dashboard data controls. Review or revoke sources in Android app permissions, Usage Access or Health Connect settings. Sign out to stop uploads; permitted local collection continues unless you pause it. Queued records belonging to an earlier account are kept separate and cannot upload to a different account. Permission revocation blocks affected queued uploads. Uninstalling or clearing app storage deletes local records. Permission revocation and sign-out do not delete data already received by your server; contact that server's operator to request deletion.
             """.trimIndent()
         }
         setContentView(ScrollView(this).apply { addView(explanation) })
