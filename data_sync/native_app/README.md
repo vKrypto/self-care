@@ -106,12 +106,43 @@ configure your own signing key when distributing a release.
    Local collection and queued records remain. The web dashboard's sign-out and
    expired sessions also stop the native connection and leave local collection
    available. Pause collection explicitly to stop collecting.
+6. Open **Sync history** from either dashboard. Tap a collection job to review
+   its sources, records, collected time windows and upload receipts. This works
+   locally without signing in; successfully uploaded records remain viewable
+   within the local history retention limits described below.
 
 The schedule runs **on the Android device**, because a server cron cannot wake a
 phone and access its local usage APIs. WorkManager persists jobs across process
 death and reboot. Hourly execution is best effort: Doze, network outages, OEM
 battery restrictions and force-stop affect timing. Force-stopped applications
 need reopening before Android resumes their jobs.
+
+## Sync history and collection details
+
+**Sync history** lists collection runs, including manual collection and scheduled
+background work. Each row shows when collection ran, its outcome, record/source
+counts, and how many batches are queued or confirmed uploaded. A collection run
+can contain several batches while catching up historical data.
+
+Tap a job to review collected sources and their record counts, denied or
+unavailable sources, collection errors, individual batch time windows, and
+server upload status. Tap a source to inspect its actual structured records and
+source metadata. Lists and records are paginated so large exports can be opened
+without loading all device history at once. **Synced** means the server
+acknowledged the exact batch UUID; local collection alone is shown as queued.
+
+Queued data uses the existing encrypted 64 MiB outbox and remains until the
+server acknowledges it. A separate encrypted archive retains acknowledged
+records for up to **30 days / 64 MiB**, pruning the oldest synced copies first.
+The latest **500 finished job summaries**, plus all jobs still containing queued
+batches, remain visible. A summary can outlive its raw records; the detail screen
+explicitly reports when those records are no longer retained locally. These
+limits do not change server retention.
+
+Existing unsent batches become history entries when upgrading. Uploads deleted
+from the local queue before this history feature was installed cannot be
+reconstructed on the device. All new collections are tracked. Signing out
+preserves device history; clearing app storage or uninstalling deletes it.
 
 ## Sources and permissions
 
@@ -174,8 +205,9 @@ exact UUID and payload.
 The encrypted queue is bounded to **64 MiB**. If it fills, collection reports an
 error and waits for space instead of silently evicting unuploaded records.
 Connecting and uploading frees space. Clearing Android app storage or
-uninstalling deletes the local queue. This queue retains unsent records rather
-than a permanent archive of acknowledged uploads.
+uninstalling deletes the local queue and history. Acknowledged records move to
+the separate bounded history archive so the collection details can still be
+viewed after syncing.
 
 Anonymous batches are assigned to the connected account when first selected for
 upload, after connection consent. That assignment persists across retries.

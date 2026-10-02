@@ -1,5 +1,5 @@
 import {NativeModules} from 'react-native';
-import type {Permissions, Session, SyncStatus} from './types';
+import type {HistoryDetails, HistoryPage, HistoryRecordsPage, Permissions, Session, SyncStatus} from './types';
 
 interface DataSyncModule {
   restoreSession(): Promise<Session | null>;
@@ -21,6 +21,9 @@ interface DataSyncModule {
   resumeSync(): Promise<SyncStatus>;
   logout(): Promise<void>;
   status(): Promise<SyncStatus>;
+  syncHistory(offset: number, limit: number): Promise<HistoryPage>;
+  collectionDetails(jobId: string): Promise<HistoryDetails>;
+  collectionRecords(jobId: string, source: string, offset: number, limit: number): Promise<HistoryRecordsPage>;
 }
 
 export const dataSync = NativeModules.FormaDataSync as DataSyncModule;

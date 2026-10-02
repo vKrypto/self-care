@@ -108,6 +108,13 @@ class LocalBatchQueue(
         Unit
     }
 
+    fun batchIds(): List<String> = synchronized(lock) { files().map(::fileBatchId) }
+
+    fun readBatch(batchId: String): JSONObject? = synchronized(lock) {
+        validateId(batchId)
+        files().firstOrNull { fileBatchId(it) == batchId }?.let(::read)
+    }
+
     fun stats(serverUrl: String? = null, userId: String? = null): JSONObject = synchronized(lock) {
         val files = files()
         var waiting = 0

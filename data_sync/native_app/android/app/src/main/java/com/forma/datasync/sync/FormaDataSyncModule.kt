@@ -51,6 +51,30 @@ class FormaDataSyncModule(private val context: ReactApplicationContext) : ReactC
     @ReactMethod fun permissionStatus(promise: Promise) = resolve(promise) { PermissionStatus.read(context) }
     @ReactMethod fun status(promise: Promise) = resolve(promise) { engine.status() }
 
+    @ReactMethod fun syncHistory(offset: Double, limit: Double, promise: Promise) = resolve(promise) {
+        val page = historyPage(offset, limit)
+        engine.syncHistory(page.first, page.second)
+    }
+
+    @ReactMethod fun collectionDetails(jobId: String, promise: Promise) = resolve(promise) {
+        engine.collectionDetails(jobId)
+    }
+
+    @ReactMethod fun collectionRecords(jobId: String, source: String, offset: Double, limit: Double, promise: Promise) = resolve(promise) {
+        val page = historyPage(offset, limit)
+        engine.collectionRecords(jobId, source, page.first, page.second)
+    }
+
+    private fun historyPage(offset: Double, limit: Double): Pair<Int, Int> {
+        require(offset.isFinite() && offset % 1.0 == 0.0 && offset >= 0.0 && offset <= Int.MAX_VALUE.toDouble()) {
+            "History offset must be a nonnegative whole number."
+        }
+        require(limit.isFinite() && limit % 1.0 == 0.0 && limit >= 1.0 && limit <= 100.0) {
+            "History page size must be a whole number between 1 and 100."
+        }
+        return offset.toInt() to limit.toInt()
+    }
+
     @ReactMethod fun completeOnboarding(historyDays: Double, promise: Promise) = resolve(promise) {
         require(historyDays.isFinite() && historyDays % 1.0 == 0.0) { "Enter a whole number of history days." }
         engine.completeOnboarding(historyDays.toInt())

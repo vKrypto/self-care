@@ -23,3 +23,35 @@ export interface SyncStatus {
   queuedBatches: number; queuedBytes: number; waitingAccountBatches: number;
   storageLimitBytes: number;
 }
+export interface HistoryJob {
+  id: string; startedAt: number; finishedAt: number | null; background: boolean;
+  status: string; error: string | null; batchCount: number; recordCount: number;
+  sourceCount: number; queuedBatches: number; syncedBatches: number;
+  uploadStatus: 'queued' | 'synced' | 'partial' | 'no_data' | 'failed';
+  lastSyncedAt: number | null; detailsAvailable: boolean;
+}
+export interface HistorySource {
+  name: string; status: string; recordCount: number; collected: boolean;
+  complete: boolean; reason: string | null; detailsAvailable: boolean;
+}
+export interface HistoryBatch {
+  id: string; windowStart: number; windowEnd: number; collectedAt: number;
+  syncedAt: number | null; status: 'queued' | 'synced' | 'failed';
+  error: string | null; serverUrl: string | null; userId: string | null;
+  bytes: number; detailsAvailable: boolean;
+}
+export interface HistoryPage {
+  jobs: HistoryJob[]; nextOffset: number | null; total: number;
+  retention: {syncedDays: number; syncedBytes: number; maxJobs: number};
+}
+export interface HistoryDetails extends HistoryJob {
+  sources: HistorySource[]; batches: HistoryBatch[];
+  permissions: Record<string, unknown> | null;
+}
+export interface HistoryRecord {batchId: string; value: unknown}
+export interface HistorySection {batchId: string; metadata: Record<string, unknown>}
+export interface HistoryRecordsPage {
+  jobId: string; source: string; records: HistoryRecord[];
+  nextOffset: number | null; total: number; available: number; detailsAvailable: boolean;
+  sections: HistorySection[];
+}

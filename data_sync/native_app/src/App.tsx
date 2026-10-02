@@ -8,6 +8,7 @@ import {WebView} from 'react-native-webview';
 import {dataSync} from './native';
 import {DASHBOARD_AUTH_BRIDGE, dashboardAuthEvent} from './dashboard';
 import {collectionScreen, readableBytes} from './collection';
+import SyncHistoryScreen from './SyncHistoryScreen';
 import type {Permissions, Session, SyncStatus} from './types';
 import {isDashboardNavigationAllowed, normalizeServerUrl} from './validation';
 
@@ -47,6 +48,7 @@ function Content() {
   const [permissions, setPermissions] = useState<Permissions | null>(null);
   const [status, setStatus] = useState<SyncStatus | null>(null);
   const [settings, setSettings] = useState(false);
+  const [showHistory, setShowHistory] = useState(false);
   const [showSignIn, setShowSignIn] = useState(false);
   const [consent, setConsent] = useState(false);
   const [localConsent, setLocalConsent] = useState(false);
@@ -222,6 +224,7 @@ function Content() {
   const healthGranted = (permissions?.health.granted_permissions ?? []).length > 0;
   const healthAvailability = permissions?.health.availability ?? permissions?.health.status ?? 'Checking availability';
   const collectionPanel = <View style={styles.syncBar}>
+    <View style={styles.row}><Text style={styles.cardTitle}>Collection & storage</Text><Button title="Sync history" secondary onPress={() => setShowHistory(true)} /></View>
     <Text style={styles.cardTitle}>{status?.collectionEnabled ? 'Hourly collection enabled' : 'Local collection paused'}</Text>
     <Text style={styles.hint}>{status?.lastCollectedAt ? `Last collection: ${new Date(status.lastCollectedAt).toLocaleString()}` : 'Waiting for the first collection'}</Text>
     <Text style={styles.body}>{status?.queuedBatches ?? 0} batches saved on this device · {readableBytes(status?.queuedBytes ?? 0)} / {readableBytes(status?.storageLimitBytes ?? 0)}</Text>
@@ -348,6 +351,7 @@ function Content() {
         {session && <Button title="Sign out · keep collecting locally" secondary disabled={busy} onPress={logout} />}
       </View>
     </ScrollView>}
+    {showHistory && <SyncHistoryScreen onClose={() => setShowHistory(false)} />}
   </SafeAreaView>;
 }
 

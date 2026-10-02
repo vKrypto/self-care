@@ -38,6 +38,12 @@ The encrypted queue is limited to 64 MiB and reports when full instead of
 discarding unuploaded records. Acknowledged uploads free queue space. Batches
 already assigned to another account remain local until that account reconnects.
 
+Open **Sync history** on either dashboard to see collection jobs and their
+upload status. Tap a job, then a source, to inspect the collected records and
+metadata. Queued records remain in the outbox until uploaded. Confirmed uploads
+remain viewable in a separate encrypted local archive for up to 30 days / 64 MiB;
+older job summaries can remain after their raw records expire.
+
 ## Build your own standalone APK
 
 ### 1. Install the build tools

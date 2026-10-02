@@ -245,6 +245,8 @@ The Android app and companion server are in [`data_sync/native_app`](data_sync/n
 
 The encrypted local queue is limited to 64 MiB. If it fills, collection reports an error and waits for space rather than deleting unuploaded records. After connecting, acknowledged batches leave the queue. Data already assigned to one account stays separate from other accounts.
 
+Open **Sync history** to review collection jobs, their sources and actual records, and each batch's upload status. Collection details work offline. Confirmed uploads are retained in a separate encrypted local archive for up to 30 days / 64 MiB so they can still be inspected after syncing.
+
 To generate an installable standalone preview APK after configuring Node, JDK 17 and the Android SDK:
 
 ```sh

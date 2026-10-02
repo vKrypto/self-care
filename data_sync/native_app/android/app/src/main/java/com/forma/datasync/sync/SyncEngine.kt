@@ -128,6 +128,13 @@ class SyncEngine(context: Context) {
             .put("historyDays", state.optInt("historyDays", 30))
     }
 
+    // History reads use the store's short file/index lock rather than the collection mutex.
+    // Opening a past job remains responsive while Android reads or HTTP uploads are in progress.
+    fun syncHistory(offset: Int, limit: Int): JSONObject = store.collectionHistory(offset, limit)
+    fun collectionDetails(jobId: String): JSONObject = store.collectionDetails(jobId)
+    fun collectionRecords(jobId: String, source: String, offset: Int, limit: Int): JSONObject =
+        store.collectionRecords(jobId, source, offset, limit)
+
     /** Pause only uploads; the local collection schedule remains active. */
     fun pause(): JSONObject {
         store.update { it.put("enabled", false) }
@@ -188,14 +195,17 @@ class SyncEngine(context: Context) {
     suspend fun collect(background: Boolean): Boolean = lock.withLock collectLocked@ {
         var initial = localState()
         if (!CollectionStatePolicy.canCollect(initial)) return@collectLocked false
-        // Recover a crash between the durable append and the cursor-state commit.
-        val recovered = store.recoverLocalCursors(initial.optLong("collectionEpoch"))
-        initial = store.update { CollectionStatePolicy.mergeCursors(it, recovered) }
+        val collectionJobId = store.beginCollection(background)
         activeCollection = currentCoroutineContext()[Job]
+        var jobStatus = "failed"
+        var jobError: String? = null
         val now = System.currentTimeMillis()
         val deadline = now + 90_000L
         val historyStart = initial.optLong("historyStart", now - initial.optInt("historyDays", 30) * SyncPlanner.DAY_MS)
         try {
+            // Recover a crash between the durable append and the cursor-state commit.
+            val recovered = store.recoverLocalCursors(initial.optLong("collectionEpoch"))
+            initial = store.update { CollectionStatePolicy.mergeCursors(it, recovered) }
             // Probe statuses independently. Revoked or background-restricted sections cannot advance.
             val probe = collector.availability(background)
             val permissions = PermissionStatus.read(appContext)
@@ -214,7 +224,11 @@ class SyncEngine(context: Context) {
             }.toMutableList()
             val snapshots = available.filter { probe.getJSONObject(it).optString("mode") == "snapshot" }.toMutableSet()
             val historical = available.filterNot { it in snapshots || it == "health_status" }.toMutableList()
-            val failedSources = mutableSetOf<String>()
+            val failedSources = probe.keys().asSequence().filter { source ->
+                val section = probe.getJSONObject(source)
+                section.optString("status") == "error" ||
+                    (section.optString("status") == "ok" && !section.optBoolean("complete", true))
+            }.toMutableSet()
             fun excludeFailedSource(source: String) {
                 available.remove(source)
                 historical.remove(source)
@@ -251,7 +265,11 @@ class SyncEngine(context: Context) {
             while (count < MAX_BATCHES && System.currentTimeMillis() < deadline) {
                 currentCoroutineContext().ensureActive()
                 val state = store.read()
-                if (!CollectionStatePolicy.canCollect(state)) return@collectLocked false
+                if (!CollectionStatePolicy.canCollect(state)) {
+                    jobStatus = "cancelled"
+                    jobError = "Collection was paused. Previously collected data is retained."
+                    return@collectLocked false
+                }
                 val cursors = state.optJSONObject("cursors") ?: JSONObject()
                 val chunk = state.optLong("chunkMs", SyncPlanner.DAY_MS)
                 val planned = SyncPlanner.nextWindow(historical.map { key ->
@@ -259,10 +277,13 @@ class SyncEngine(context: Context) {
                 }, now, chunk)
                 val snapshotDue = snapshots.any { cursors.optLong(it, 0) < now }
                 if (planned == null && !snapshotDue) {
+                    jobStatus = if (failedSources.isEmpty()) "completed" else "partial"
+                    jobError = if (failedSources.isEmpty()) null else
+                        "Some permitted sources could not complete collection. Other available sources are stored locally; open the app to retry."
                     store.update {
                         it.put("collectionBacklog", failedSources.isNotEmpty())
                         if (failedSources.isEmpty()) it.remove("collectionError")
-                        else it.put("collectionError", "Some permitted sources could not complete collection. Other available sources are stored locally; open the app to retry.")
+                        else it.put("collectionError", jobError)
                     }
                     return@collectLocked false
                 }
@@ -315,7 +336,9 @@ class SyncEngine(context: Context) {
                 }
                 if (updates.length() == 0) {
                     if (unavailableThisWindow) continue
-                    store.update { it.put("collectionError", "No granted data source could complete this collection. Open the app to review permissions.") }
+                    jobStatus = if (count > 0) "partial" else "failed"
+                    jobError = "No granted data source could complete this collection. Open the app to review permissions."
+                    store.update { it.put("collectionError", jobError) }
                     return@collectLocked false
                 }
                 data.put("source_status", JSONObject().put("status", "ok").put("records", sourceSummary).put("complete", true)
@@ -339,10 +362,14 @@ class SyncEngine(context: Context) {
                     continue
                 }
                 val batch = JSONObject().put("payload", payload).put("cursorUpdates", updates)
-                    .put("collectionEpoch", state.optLong("collectionEpoch"))
+                    .put("collectionEpoch", state.optLong("collectionEpoch")).put("collectionJobId", collectionJobId)
                 if (owner != null) batch.put("owner", owner).put("userId", owner.getString("userId"))
                 currentCoroutineContext().ensureActive()
-                if (!CollectionStatePolicy.canCollect(store.read())) return@collectLocked false
+                if (!CollectionStatePolicy.canCollect(store.read())) {
+                    jobStatus = "cancelled"
+                    jobError = "Collection was paused. Previously collected data is retained."
+                    return@collectLocked false
+                }
                 store.appendLocal(batch)
                 store.update {
                     CollectionStatePolicy.mergeCursors(it, updates)
@@ -352,18 +379,31 @@ class SyncEngine(context: Context) {
                 }
                 count++
             }
+            jobStatus = "partial"
+            jobError = if (failedSources.isEmpty()) "History collection will continue in another background job."
+                else "Some permitted sources could not complete collection. History collection will continue in another background job."
             store.update { it.put("collectionBacklog", true) }
             true
         } catch (error: CancellationException) {
+            jobStatus = "cancelled"
+            jobError = "Collection was cancelled. Previously collected data is retained."
             throw error
         } catch (error: LocalQueueFullException) {
-            store.update { it.put("collectionError", "Local storage is full. Existing data is retained; connect and sync to make room for collection.") }
+            jobStatus = "failed"
+            jobError = "Local storage is full. Existing data is retained; connect and sync to make room for collection."
+            store.update { it.put("collectionError", jobError) }
             false
         } catch (error: Exception) {
-            store.update { it.put("collectionError", "Collection could not complete. Existing local data is retained; review permissions and device storage.") }
+            jobStatus = "failed"
+            jobError = "Collection could not complete. Existing local data is retained; review permissions and device storage."
+            store.update { it.put("collectionError", jobError) }
             throw error
         } finally {
-            activeCollection = null
+            try {
+                store.finishCollection(collectionJobId, jobStatus, jobError)
+            } finally {
+                activeCollection = null
+            }
         }
     }
 
@@ -376,9 +416,13 @@ class SyncEngine(context: Context) {
         val deadline = System.currentTimeMillis() + 90_000L
         val skipped = mutableSetOf<String>()
         var blockedError: String? = null
+        var uploadingBatchId: String? = null
+        var acknowledgmentReceived = false
         var count = 0
         try {
             while (count < MAX_BATCHES && System.currentTimeMillis() < deadline) {
+                uploadingBatchId = null
+                acknowledgmentReceived = false
                 currentCoroutineContext().ensureActive()
                 val state = store.read()
                 if (!CollectionStatePolicy.canUpload(state)) return@withLock false
@@ -389,8 +433,10 @@ class SyncEngine(context: Context) {
                     state.getString("deviceId"), skipped) { candidate ->
                     val decision = SyncBatchPolicy.decide(candidate, store.read(), candidateAccess)
                     if (decision == SyncBatchPolicy.Decision.BLOCK) {
-                        skipped.add(candidate.getJSONObject("payload").getString("batch_id"))
+                        val blockedId = candidate.getJSONObject("payload").getString("batch_id")
+                        skipped.add(blockedId)
                         blockedError = "Some stored batches are waiting for their Android permissions to be granted again. Their data remains on this device."
+                        store.markLocalUploadError(blockedId, "Upload is waiting for the required Android permissions to be granted again.")
                     }
                     decision == SyncBatchPolicy.Decision.UPLOAD
                 }
@@ -403,14 +449,19 @@ class SyncEngine(context: Context) {
                 }
                 val payload = batch.getJSONObject("payload")
                 val id = payload.getString("batch_id")
+                uploadingBatchId = id
                 // Revocation prevents transmitting previously collected data, without deleting local history.
                 val freshAccess = collector.availability(background = false)
                 currentCoroutineContext().ensureActive()
                 when (SyncBatchPolicy.decide(batch, store.read(), freshAccess)) {
-                    SyncBatchPolicy.Decision.STOP -> return@withLock false
+                    SyncBatchPolicy.Decision.STOP -> {
+                        store.markLocalUploadError(id, "Upload is paused or the account is signed out. This batch is retained locally.")
+                        return@withLock false
+                    }
                     SyncBatchPolicy.Decision.BLOCK -> {
                         skipped.add(id)
                         blockedError = "Some stored batches are waiting for their Android permissions to be granted again. Their data remains on this device."
+                        store.markLocalUploadError(id, "Upload is waiting for the required Android permissions to be granted again.")
                         continue
                     }
                     SyncBatchPolicy.Decision.UPLOAD -> Unit
@@ -422,24 +473,35 @@ class SyncEngine(context: Context) {
                     check(ack.optBoolean("accepted") && ack.optString("batch_id") == id) {
                         "The server did not acknowledge this batch."
                     }
+                    acknowledgmentReceived = true
                 } catch (error: ApiException) {
                     if (error.status != 413) throw error
                     // A server-specific smaller limit must not discard data or mutate an idempotent batch.
                     skipped.add(id)
                     blockedError = "The server cannot accept a stored batch of this size. It remains on this device."
+                    store.markLocalUploadError(id, "The server cannot accept this batch's size. This batch is retained locally.")
                     store.update { it.put("lastError", blockedError) }
                     continue
                 }
                 // Persist acknowledgment before deletion; a crash can safely replay the exact UUID/body.
-                store.update { it.put("lastSyncAt", System.currentTimeMillis()) }
+                val syncedAt = System.currentTimeMillis()
+                store.markLocalSynced(id, syncedAt)
+                // Once a durable receipt exists, a later local-state/removal failure must
+                // not relabel this confirmed upload as failed in its history entry.
+                uploadingBatchId = null
+                store.update { it.put("lastSyncAt", syncedAt) }
                 store.removeLocal(id)
                 count++
             }
             store.update { if (blockedError == null) it.remove("lastError") else it.put("lastError", blockedError) }
             true
         } catch (error: CancellationException) {
+            uploadingBatchId?.let { store.markLocalUploadError(it, "Upload was cancelled. This batch is retained locally until acknowledgment.") }
             throw error
         } catch (error: ApiException) {
+            uploadingBatchId?.let { store.markLocalUploadError(it,
+                if (error.status == 401) "Session expired. Sign in again to upload this batch."
+                else "The server could not accept this upload. This batch is retained locally.") }
             if (error.status == 401) {
                 invalidateAuth()
                 false
@@ -452,6 +514,9 @@ class SyncEngine(context: Context) {
                 } else throw error
             }
         } catch (error: Exception) {
+            uploadingBatchId?.let { store.markLocalUploadError(it,
+                if (acknowledgmentReceived) "The server acknowledged this batch, but its local receipt could not be saved. It is retained locally for retry."
+                else "Upload could not complete. This batch is retained locally for retry.") }
             store.update { it.put("lastError", "Sync could not complete. Stored data is retained while the server is unavailable.") }
             throw error
         } finally {

@@ -17,9 +17,14 @@ class SecureStore(context: Context) {
     private val prefs = context.getSharedPreferences("forma_native_private", Context.MODE_PRIVATE)
     private val pendingFile = File(context.noBackupFilesDir, "forma_pending_batch.enc")
     private val queueDirectory = File(context.noBackupFilesDir, "forma_local_batches")
+    private val historyDirectory = File(context.noBackupFilesDir, "forma_collection_history")
     private val localQueue: LocalBatchQueue
         get() = localQueues.getOrPut(queueDirectory.absolutePath) {
             LocalBatchQueue(queueDirectory, ::encrypt, ::decrypt)
+        }
+    private val historyStore: CollectionHistoryStore
+        get() = histories.getOrPut(historyDirectory.absolutePath) {
+            CollectionHistoryStore(historyDirectory, ::encrypt, ::decrypt, localQueue::batchIds, localQueue::readBatch)
         }
 
     fun read(): JSONObject = synchronized(lock) {
@@ -56,7 +61,11 @@ class SecureStore(context: Context) {
         Unit
     }
 
-    fun appendLocal(batch: JSONObject) = synchronized(lock) { localQueue.append(batch) }
+    fun appendLocal(batch: JSONObject) = synchronized(lock) {
+        // Raw records commit first. History bootstrap recovers an interrupted index update.
+        localQueue.append(batch)
+        historyStore.recordBatch(batch)
+    }
 
     fun nextLocal(
         serverUrl: String,
@@ -64,7 +73,9 @@ class SecureStore(context: Context) {
         deviceId: String,
         excludeBatchIds: Set<String> = emptySet(),
         canUpload: (JSONObject) -> Boolean = { true },
-    ): JSONObject? = synchronized(lock) { localQueue.next(serverUrl, userId, deviceId, excludeBatchIds, canUpload) }
+    ): JSONObject? = synchronized(lock) {
+        localQueue.next(serverUrl, userId, deviceId, excludeBatchIds, canUpload)?.also(historyStore::recordBatch)
+    }
 
     fun removeLocal(batchId: String) = synchronized(lock) { localQueue.remove(batchId) }
 
@@ -76,10 +87,31 @@ class SecureStore(context: Context) {
         localQueue.recoverCursors(collectionEpoch)
     }
 
+    fun beginCollection(background: Boolean): String = synchronized(lock) { historyStore.begin(background) }
+
+    fun finishCollection(jobId: String, status: String, error: String? = null) = synchronized(lock) {
+        historyStore.finish(jobId, status, error)
+    }
+
+    fun markLocalSynced(batchId: String, syncedAt: Long) = synchronized(lock) { historyStore.markSynced(batchId, syncedAt) }
+
+    fun markLocalUploadError(batchId: String, message: String) = synchronized(lock) {
+        historyStore.markUploadError(batchId, message)
+    }
+
+    fun collectionHistory(offset: Int, limit: Int): JSONObject = synchronized(lock) { historyStore.history(offset, limit) }
+
+    fun collectionDetails(jobId: String): JSONObject = synchronized(lock) { historyStore.details(jobId) }
+
+    fun collectionRecords(jobId: String, source: String, offset: Int, limit: Int): JSONObject = synchronized(lock) {
+        historyStore.records(jobId, source, offset, limit)
+    }
+
     fun clear() = synchronized(lock) {
         check(prefs.edit().clear().commit()) { "Unable to clear the encrypted sync state." }
         clearPending()
         localQueue.clear()
+        historyStore.clear()
     }
 
     private fun key(): SecretKey {
@@ -113,5 +145,6 @@ class SecureStore(context: Context) {
         private val lock = Any()
         // Workers and the bridge share lightweight owner/cursor metadata across polls.
         private val localQueues = mutableMapOf<String, LocalBatchQueue>()
+        private val histories = mutableMapOf<String, CollectionHistoryStore>()
     }
 }
