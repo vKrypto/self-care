@@ -239,6 +239,9 @@ test("completed and skipped activities refresh evidence-based feedback", async (
     name: "Daily progress feedback",
   });
   await expect(feedback).toContainText("0 completed and 0 skipped");
+  await expect(
+    feedback.getByRole("button", { name: "Analyze photos", exact: true }),
+  ).toBeDisabled();
   await page
     .getByRole("button", { name: "Mark Morning walk completed" })
     .click();
@@ -298,6 +301,37 @@ test("multiple today's photos update progress and explicit analysis exposes prov
   await expect(feedback).toContainText("activity record have changed");
 });
 
+test("selected-date photos stay on that date and refresh its feedback", async ({
+  page,
+}) => {
+  const { state, today } = await workspace(page);
+  const selectedDate = shiftDate(today, 2);
+  await page.locator(".date-strip button").nth(2).click();
+  await page.getByRole("button", { name: "Add check-in", exact: true }).click();
+  const dialog = page.getByRole("dialog");
+  await dialog.getByLabel("Progress photos (optional)").setInputFiles({
+    name: "progress.png",
+    mimeType: "image/png",
+    buffer: Buffer.from(pixel, "base64"),
+  });
+  await dialog.getByRole("button", { name: "Save check-in" }).click();
+  await expect(dialog).not.toBeVisible();
+  expect(state.uploads).toEqual([selectedDate]);
+  const feedback = page.getByRole("region", {
+    name: "Daily progress feedback",
+  });
+  await expect(feedback).toContainText(`Saved record for ${selectedDate}`);
+  await expect(feedback).toContainText("1 progress photos saved");
+  await expect(
+    feedback.getByRole("button", { name: "Analyze photos", exact: true }),
+  ).toBeEnabled();
+  await page.locator(".date-strip button").first().click();
+  await expect(feedback).toContainText(`Saved record for ${today}`);
+  await expect(
+    feedback.getByRole("button", { name: "Analyze photos", exact: true }),
+  ).toBeDisabled();
+});
+
 test("late tracking responses cannot replace the selected date's progress", async ({
   page,
 }) => {
@@ -349,7 +383,7 @@ test("MCP settings create once-only tokens, explain remote access, and revoke to
   await workspace(page);
   await page.getByRole("button", { name: "Settings", exact: true }).click();
   const panel = page.getByRole("region", { name: "MCP connections" });
-  await expect(panel.getByLabel("MCP server URL")).toHaveValue(
+  await expect(panel.getByLabel("MCP server URL", { exact: true })).toHaveValue(
     "http://127.0.0.1:8000/mcp",
   );
   await expect(panel).toContainText("public HTTPS address");

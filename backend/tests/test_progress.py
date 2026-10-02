@@ -136,6 +136,25 @@ def test_history_remains_available_after_regeneration(ready):
     assert progress.day_tracking(server, account, '2026-10-03')['has_plan'] is False
 
 
+def test_abandoned_future_archive_tasks_never_reappear_as_calendar_advances(ready, monkeypatch):
+    _, account, old_plan = ready
+    old_plan['days'].append(sample_day('2026-10-04'))
+    replacement = {'start_date': '2026-10-02', 'end_date': '2026-10-02', 'days': [old_plan['days'][1]]}
+    with server.connect() as con:
+        # This is October 2 in Kolkata, even though UTC is still October 1.
+        con.execute('INSERT INTO plan_history VALUES(?,?,?,?,?)', ('archive', account['id'], json.dumps(old_plan), '[]', '2026-10-01T20:00:00+00:00'))
+        con.execute('UPDATE plans SET data=? WHERE tenant=?', (json.dumps(replacement), account['id']))
+    server.cache.delete(account['id'], 'plan')
+    monkeypatch.setattr(server, 'today', lambda tz='Asia/Kolkata': date(2026, 10, 4))
+    assert progress.day_tracking(server, account, '2026-10-01')['has_plan']
+    assert progress.day_tracking(server, account, '2026-10-02')['has_plan']
+    assert progress.day_tracking(server, account, '2026-10-03')['has_plan'] is False
+    assert progress.day_tracking(server, account, '2026-10-04')['has_plan'] is False
+    summary = progress.progress_summary(server, account)
+    assert [day['date'] for day in summary['days']] == ['2026-10-01', '2026-10-02']
+    assert summary['counts']['total'] == 6
+
+
 def test_photo_review_uses_only_own_current_images_and_earlier_baseline(ready):
     client, account, _ = ready
     baseline = upload(client, '2026-09-20', 'body', 'red')
@@ -200,6 +219,9 @@ def test_baseline_deletion_and_reencoded_file_change_invalidate_review(ready):
     path = server.DATA / 'media' / account['id'] / (current['id'] + '.jpg')
     Image.new('RGB', (30, 30), 'white').save(path, 'JPEG')
     assert progress.day_tracking(server, account)['photo_review']['stale']
+    progress.analyze_photos(server, account, provider=provider)
+    client.delete(baseline['url'])
+    assert progress.day_tracking(server, account)['photo_review']['stale']
 
 
 def test_past_photo_review_remains_current_when_calendar_advances(ready, monkeypatch):
@@ -211,9 +233,6 @@ def test_past_photo_review_remains_current_when_calendar_advances(ready, monkeyp
     assert progress.day_tracking(server, account, '2026-10-02')['photo_review']['stale'] is False
     progress.analyze_photos(server, account, '2026-10-02', provider)
     assert len(provider.contexts) == 1
-    progress.analyze_photos(server, account, provider=provider)
-    client.delete(baseline['url'])
-    assert progress.day_tracking(server, account)['photo_review']['stale']
 
 
 def test_photo_provider_configuration_and_failure_never_fabricate_reviews(ready, monkeypatch):

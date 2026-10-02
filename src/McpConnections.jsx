@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useId, useState } from "react";
 import { Copy, KeyRound, LoaderCircle, Trash2 } from "lucide-react";
 import { api } from "./api";
 
@@ -14,6 +14,7 @@ function displayTime(value) {
 }
 
 export default function McpConnections() {
+  const fieldId = useId();
   const [tokens, setTokens] = useState([]);
   const [connections, setConnections] = useState([]);
   const [endpoint, setEndpoint] = useState(window.location.origin + "/mcp");
@@ -113,20 +114,18 @@ export default function McpConnections() {
           {error}
         </p>
       )}
-      <label>
-        MCP server URL
-        <div className="copy-field">
-          <input readOnly value={endpoint} />
-          <button
-            type="button"
-            className="outline"
-            onClick={() => copy(endpoint, "Server URL copied")}
-            aria-label="Copy MCP server URL"
-          >
-            <Copy size={15} />
-          </button>
-        </div>
-      </label>
+      <label htmlFor={`${fieldId}-url`}>MCP server URL</label>
+      <div className="copy-field">
+        <input id={`${fieldId}-url`} readOnly value={endpoint} />
+        <button
+          type="button"
+          className="outline"
+          onClick={() => copy(endpoint, "Server URL copied")}
+          aria-label="Copy MCP server URL"
+        >
+          <Copy size={15} />
+        </button>
+      </div>
       <p>
         For ChatGPT, deploy Forma at a public HTTPS address and add this URL as
         an MCP connector. Sign in to authorize your account. A local server is
@@ -161,20 +160,23 @@ export default function McpConnections() {
             Save this token now. It is shown once and grants access to your
             plans, tracking, and photos.
           </p>
-          <label>
-            New connection token
-            <div className="copy-field">
-              <input readOnly value={createdToken.token} autoComplete="off" />
-              <button
-                type="button"
-                className="outline"
-                onClick={() => copy(createdToken.token, "Token copied")}
-                aria-label="Copy connection token"
-              >
-                <Copy size={15} />
-              </button>
-            </div>
-          </label>
+          <label htmlFor={`${fieldId}-token`}>New connection token</label>
+          <div className="copy-field">
+            <input
+              id={`${fieldId}-token`}
+              readOnly
+              value={createdToken.token}
+              autoComplete="off"
+            />
+            <button
+              type="button"
+              className="outline"
+              onClick={() => copy(createdToken.token, "Token copied")}
+              aria-label="Copy connection token"
+            >
+              <Copy size={15} />
+            </button>
+          </div>
           <button
             type="button"
             className="text-button"

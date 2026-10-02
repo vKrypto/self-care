@@ -46,7 +46,7 @@ Admin credentials are `admin@example.com` / `admin123`, as requested. `ADMIN_EMA
 - New OpenAI workout plans provide structured exercise names, sets, reps, holds, duration, rest intervals, and an approximate calorie burn per exercise. Validation checks quantities and session totals, and the exercises' burn cannot exceed the session estimate.
 - New meal plans include daily protein, carbohydrate, fat and fiber targets. Each meal gives its grams of each, and every ingredient line states its quantity with approximate kcal and protein. Calories stay primary because the existing daily-calorie checks validate them. The server then makes each meal's macros agree with its calories: protein is the sum of the ingredient-level estimates (when most lines state one), and the remaining calories are split between carbohydrate and fat in the model's ratio. Days whose protein is more than 25% (or 15 g) off target get up to two specific revision rounds. After that the plan publishes anyway, and the cards show planned against target rather than failing the request. Cards and the details dialog show these values. Plans generated before this change have no nutrition fields until they are regenerated, refined or extended.
 - The dashboard and calendar also show day-specific calorie and movement totals, water logs, check-ins, weight trends, completion graphs, adherence summaries, and habit feedback. Saved user feedback is passed into subsequent planning.
-- Admins can create/list/delete accounts, set passwords, and enter a user’s workspace. They also have their own profile and wellness pages alongside the Users screen. Impersonation has an explicit return-to-admin action. Deletion removes the tenant's database records and local files.
+- Admins can create/list/delete accounts, set passwords, and enter a user’s workspace. Administrators manage the platform; personal plans and MCP connections belong to member accounts. Impersonation has an explicit return-to-admin action. Deletion removes the tenant's database records and local files.
 - The sidebar toggle switches between the full menu and an icon rail, remembering the desktop choice in the browser. On mobile, the full menu opens over the page and closes after navigation, an outside click, or Escape. Menu icons retain accessible labels and tooltips.
 - Database reads/writes and media endpoints derive ownership from the authenticated session. Different tenants cannot access one another’s data. Passwords use salted PBKDF2 hashes, and sessions use opaque HttpOnly cookies with hashed tokens stored in SQLite.
 
@@ -71,7 +71,7 @@ Dates use `YYYY-MM-DD`; omitted dates use the member profile timezone. Regenerat
 
 ### Local agent connection
 
-Sign in to a member account, open **Settings → Agent connections**, and create a personal access token. Copy it immediately; only its hash is stored. Tokens expire and can be revoked in Settings. Credentials remain outside frontend bundles.
+Sign in to a member account, open **Settings → Connect your agent**, and create a personal access token. Copy it immediately; only its hash is stored. Tokens expire and can be revoked in Settings. Credentials remain outside frontend bundles.
 
 For Claude Code using HTTP, run the backend and add it as a project-local MCP server:
 
@@ -109,7 +109,7 @@ The service advertises protected-resource and authorization-server discovery, su
 
 Session-authenticated management endpoints are `GET/POST /api/mcp/tokens`, `DELETE /api/mcp/tokens/{id}`, `GET /api/mcp/connections`, and `DELETE /api/mcp/connections/{id}`. Token creation accepts `{"name":"My agent","expires_days":90}` with a 1–365 day expiry and shows the secret once. MCP requests always use `Authorization: Bearer <token>`.
 
-The transport follows the official [Python SDK v1 documentation](https://py.sdk.modelcontextprotocol.io/v1/) and [MCP authorization specification](https://modelcontextprotocol.io/specification/2025-06-18/basic/authorization). Local Claude configuration follows the [Claude Code MCP guide](https://code.claude.com/docs/en/mcp).
+The transport follows the official [Python SDK v1 documentation](https://py.sdk.modelcontextprotocol.io/v1/) and [MCP authorization specification](https://modelcontextprotocol.io/specification/2025-06-18/basic/authorization). Local Claude configuration follows the [Claude Code MCP guide](https://code.claude.com/docs/en/mcp). ChatGPT setup follows the official [connection guide](https://developers.openai.com/plugins/deploy/connect-chatgpt).
 
 ## Exercise and food guides
 
@@ -149,6 +149,8 @@ npm run test:e2e
 
 Run the API and frontend before browser tests. The backend tests use isolated temporary databases and a controlled provider, so they do not incur API charges or send email. They cover persistent authentication, tenant isolation, uploads, task validation, admin CRUD/impersonation, background jobs, care timing, bounded review revisions, and preservation of previous plans after failures.
 
+Phase 2 tests exercise actual MCP initialization, tool discovery and calls, strict 1–28 day validation, token hashing/revocation/expiry, member isolation, browser consent and CSRF, exact redirect matching, PKCE verification, resource binding, confidential-client authentication, refresh rotation and reuse rejection, and OAuth revocation. Progress tests cover dated task totals, private photos, bounded visual inputs, persisted reviews, provider failures, and stale-review detection when tracking or photos change.
+
 Plan-adjustment tests also cover request limits, stored preferences reaching future generation, preservation of completed/skipped tasks, extension dates, archived versions, retries, concurrent-job rejection, and tenant isolation. Browser tests exercise both dialogs, saved notes, failure recovery, mobile layout, and navigation through extended weeks using intercepted planning responses; they leave the administrator's real plan unchanged.
 
 View tests cover nutrition and burn on cards, the Minimal view and its saved preference, and the Static pages tab. Backend tests check that the nutrition and burn fields are required by the structured-output schema, rejected when inconsistent, and kept in generated plans. Guide tests check that every saved meal title maps to a food guide, that every exercise has at least two photos on disk with credits, alias precedence, `?q=` resolution, focus mode, links to and back from guide pages, direct guide URLs, and phone layout.
@@ -161,14 +163,14 @@ A live OpenAI run was also verified: 28 days, all three planning roles, approved
 
 Implementation follows the official [OpenAI structured outputs guide](https://developers.openai.com/api/docs/guides/structured-outputs) and FastAPI documentation for [file uploads](https://fastapi.tiangolo.com/tutorial/request-files/).
 
-## Administrator sample onboarding
+## Sample member onboarding
 
-A fictional sample profile is saved for `admin@example.com`: age 29, 175 cm, 75 kg, beginner, vegetarian, gym access, and optional skin/hair care beginning in week 3. Its account keeps the admin role. Sign in, then select **Overview** for the personal plan or **Users** for administration.
+The optional seed helper creates a regular member at `sample@example.com` with password `sample123`, unless `SAMPLE_EMAIL` or `SAMPLE_PASSWORD` overrides them. It uses a fictional profile: age 29, 175 cm, 75 kg, beginner, vegetarian, gym access, and optional skin/hair care beginning in week 3. Member accounts can use personal plans and MCP connections; `admin@example.com` manages users and guides.
 
 The seed helper preserves existing profiles and plans and resumes polling an active planning job:
 
 ```sh
-.venv/bin/python scripts/seed_admin_sample.py
+.venv/bin/python scripts/seed_sample_member.py
 ```
 
 The login dialog prefills `admin@example.com` / `admin123` for the local sample workspace. New onboarding forms start with clearly labeled sample defaults; existing saved values take precedence. Photo inputs remain optional and require selecting actual files.

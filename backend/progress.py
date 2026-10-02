@@ -7,8 +7,9 @@ import base64
 import hashlib
 import json
 import os
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 from fastapi import HTTPException
 from pydantic import BaseModel, ConfigDict, Field
@@ -95,11 +96,6 @@ def _member(account):
         raise HTTPException(403, 'Administrators do not have personal progress tracking.')
 
 
-def _today(server, account):
-    profile = server.load_profile(account['id']) or {}
-    return server.today(profile.get('timezone', 'Asia/Kolkata')).isoformat()
-
-
 def _date(server, value):
     # Explicit empty or non-string values must not silently select today.
     if not isinstance(value, str) or len(value) != 10:
@@ -111,14 +107,19 @@ def _snapshot(server, account):
     """Current days take precedence; archived days retain their original tasks."""
     tenant = account['id']
     plan = server.load_plan(tenant) or {}
-    today = _today(server, account)
+    member_zone = ZoneInfo((server.load_profile(tenant) or {}).get('timezone', 'Asia/Kolkata'))
+    today = server.today(str(member_zone)).isoformat()
     days = {d['date']: d for d in plan.get('days', [])}
     statuses = {}
     with server.connect() as con:
-        archives = con.execute('SELECT data,statuses FROM plan_history WHERE tenant=? ORDER BY created DESC,rowid DESC', (tenant,)).fetchall()
+        archives = con.execute('SELECT data,statuses,created FROM plan_history WHERE tenant=? ORDER BY created DESC,rowid DESC', (tenant,)).fetchall()
         for archived in archives:
             previous = json.loads(archived['data'])
-            new_dates = {d['date'] for d in previous.get('days', []) if d['date'] not in days and d['date'] <= today}
+            replaced_at = datetime.fromisoformat(archived['created'])
+            if replaced_at.tzinfo is None:
+                replaced_at = replaced_at.replace(tzinfo=timezone.utc)
+            cutoff = min(today, replaced_at.astimezone(member_zone).date().isoformat())
+            new_dates = {d['date'] for d in previous.get('days', []) if d['date'] not in days and d['date'] <= cutoff}
             for day in previous.get('days', []):
                 if day['date'] in new_dates:
                     days[day['date']] = day
