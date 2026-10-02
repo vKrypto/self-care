@@ -2,16 +2,13 @@ package com.forma.datasync.sync
 
 import android.content.Context
 import android.os.Build
-import android.webkit.CookieManager
 import com.forma.datasync.collectors.AndroidCollector
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
-import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.IOException
@@ -182,11 +179,6 @@ class SyncEngine(context: Context) {
                 if (old.optString("token").isNotBlank()) api(old).request("/api/native/logout", JSONObject())
             } catch (_: Exception) {
                 // Signing out locally must work while offline.
-            } finally {
-                withContext(Dispatchers.Main) {
-                    CookieManager.getInstance().removeAllCookies(null)
-                    CookieManager.getInstance().flush()
-                }
             }
         }
     }

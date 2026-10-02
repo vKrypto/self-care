@@ -1,6 +1,6 @@
 {
   "name": "forma-data-sync",
-  "version": "0.3.2",
+  "version": "0.3.3",
   "private": true,
   "scripts": {
     "start": "react-native start",
@@ -17,8 +17,7 @@
     "react": "19.2.3",
     "react-native": "0.84.1",
     "react-native-safe-area-context": "5.10.1",
-    "react-native-url-polyfill": "4.0.0",
-    "react-native-webview": "14.0.1"
+    "react-native-url-polyfill": "4.0.0"
   },
   "devDependencies": {
     "@babel/core": "^7.25.2",

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {isDashboardNavigationAllowed, normalizeServerUrl} from '../src/validation';
+import {normalizeServerUrl} from '../src/validation';
 
 test('release server URLs require HTTPS and an origin without credentials or path', () => {
   assert.equal(normalizeServerUrl(' https://forma.example.com/ ', false), 'https://forma.example.com');
@@ -42,21 +42,4 @@ test('LAN HTTP rejects credentials, other paths and invalid ports', () => {
     assert.throws(() => normalizeServerUrl(`http://${authority}:8000`, false, true));
   }
   assert.equal(normalizeServerUrl('http://192.168.1.10:65535', false, true), 'http://192.168.1.10:65535');
-});
-
-test('dashboard cannot navigate to another origin, port, scheme or lookalike host', () => {
-  const origin = 'https://forma.example.com';
-  assert.equal(isDashboardNavigationAllowed(`${origin}/api/profile`, origin), true);
-  assert.equal(isDashboardNavigationAllowed('https://FORMA.EXAMPLE.COM:443/dashboard', origin), true);
-  for (const url of ['https://forma.example.com.evil.test', 'https://evil.test', 'http://forma.example.com', 'https://forma.example.com:444', 'file:///etc/passwd', 'intent://test', 'https://user:password@forma.example.com', 'blob:https://forma.example.com/test']) {
-    assert.equal(isDashboardNavigationAllowed(url, origin), false);
-  }
-});
-
-test('LAN dashboard still cannot navigate to another host, scheme or port', () => {
-  const origin = 'http://192.168.1.10:8000';
-  assert.equal(isDashboardNavigationAllowed(`${origin}/api/native/dashboard`, origin), true);
-  for (const url of ['http://192.168.1.11:8000', 'http://192.168.1.10:8001', 'https://192.168.1.10:8000', 'http://forma.local:8000', 'http://user:password@192.168.1.10:8000']) {
-    assert.equal(isDashboardNavigationAllowed(url, origin), false);
-  }
 });

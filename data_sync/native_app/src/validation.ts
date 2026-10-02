@@ -1,4 +1,4 @@
-// Keep navigation and credentials on the configured server's origin.
+// Validate the configured server origin before sending sign-in credentials.
 export function normalizeServerUrl(input: string, development: boolean, allowLanHttp = false): string {
   const value = input.trim();
   let url: URL;
@@ -29,14 +29,4 @@ function isCanonicalPrivateIpv4(host: string): boolean {
   if (octets.some(octet => !Number.isInteger(octet) || octet < 0 || octet > 255)) { return false; }
   return octets[0] === 10 || (octets[0] === 172 && octets[1] >= 16 && octets[1] <= 31) ||
     (octets[0] === 192 && octets[1] === 168);
-}
-
-export function isDashboardNavigationAllowed(destination: string, serverUrl: string): boolean {
-  if (destination === 'about:blank') { return true; }
-  try {
-    const url = new URL(destination);
-    const server = new URL(serverUrl);
-    return !url.username && !url.password && url.protocol === server.protocol && url.origin === server.origin;
-  }
-  catch { return false; }
 }

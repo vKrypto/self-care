@@ -1,16 +1,14 @@
 import React, {useCallback, useEffect, useRef, useState} from 'react';
 import {
-  ActivityIndicator, AppState, KeyboardAvoidingView, Platform, Pressable,
+  ActivityIndicator, AppState, KeyboardAvoidingView, Linking, Platform, Pressable,
   ScrollView, StyleSheet, Text, TextInput, View,
 } from 'react-native';
 import {SafeAreaProvider, SafeAreaView} from 'react-native-safe-area-context';
-import {WebView} from 'react-native-webview';
 import {dataSync} from './native';
-import {DASHBOARD_AUTH_BRIDGE, dashboardAuthEvent} from './dashboard';
 import {collectionScreen, readableBytes} from './collection';
 import SyncHistoryScreen from './SyncHistoryScreen';
 import type {Permissions, Session, SyncStatus} from './types';
-import {isDashboardNavigationAllowed, normalizeServerUrl} from './validation';
+import {normalizeServerUrl} from './validation';
 
 const CONSENT = 'I agree to upload the device usage, calendar, location and health data I grant access to, including sensitive health categories, to my configured Forma server. I can revoke permissions or pause uploads at any time.';
 const LOCAL_CONSENT = 'I agree to collect the device usage, calendar, location and health data I grant access to, including sensitive health categories, and store it encrypted on this device. I can revoke permissions or pause collection at any time.';
@@ -56,12 +54,9 @@ function Content() {
   const [consent, setConsent] = useState(false);
   const [localConsent, setLocalConsent] = useState(false);
   const [historyDays, setHistoryDays] = useState('30');
-  const [webError, setWebError] = useState('');
-  const [webKey, setWebKey] = useState(0);
   const sessionRef = useRef<Session | null>(null);
   const actionBusy = useRef(false);
   const manualSyncBusy = useRef(false);
-  const checkingDashboardAuth = useRef(false);
   const refreshRevision = useRef(0);
   const authRevision = useRef(0);
 
@@ -73,7 +68,7 @@ function Content() {
   const clearSessionView = useCallback(() => {
     authRevision.current++;
     rememberSession(null); setPassword(''); setSettings(false); setConsent(false); setLocalConsent(false);
-    setShowSignIn(false); setWebError(''); setWebKey(k => k + 1);
+    setShowSignIn(false);
   }, [rememberSession]);
 
   const refresh = useCallback(async () => {
@@ -142,7 +137,7 @@ function Content() {
     const saved = await dataSync.login(origin, email.trim().toLowerCase(), password);
     const current = await dataSync.status();
     setPassword(''); rememberSession(saved); setServerUrl(saved.serverUrl); setShowSignIn(false);
-    setStatus(current); setSettings(!current.connected); setConsent(false); setLocalConsent(false); setWebError('');
+    setStatus(current); setSettings(!current.connected); setConsent(false); setLocalConsent(false);
     setHistoryDays(String(current.historyDays));
   });
 
@@ -190,31 +185,11 @@ function Content() {
     }
   };
 
-  const handleDashboardAuth = async (event: 'auth-required' | 'signed-out', expectedToken: string) => {
-    if (checkingDashboardAuth.current || sessionRef.current?.token !== expectedToken) { return; }
-    checkingDashboardAuth.current = true;
-    try {
-      if (event === 'signed-out') {
-        await dataSync.logout();
-        if (sessionRef.current?.token === expectedToken) { clearSessionView(); await refresh(); }
-      } else {
-        // An AJAX 401 can mean either the native token expired or the WebView
-        // cookie failed. Verify the native session before asking for sign-in.
-        const saved = await dataSync.restoreSession();
-        if (sessionRef.current?.token !== expectedToken) { return; }
-        if (!saved) {
-          clearSessionView(); setError('Your session expired. Sign in again to resume uploads.');
-          await refresh();
-        } else {
-          setWebError('Dashboard sign-in failed. Check the server connection and reload the dashboard.');
-        }
-      }
-    } catch {
-      if (sessionRef.current?.token === expectedToken) {
-        setWebError('Cannot verify your dashboard session. Check the server connection and reload.');
-      }
-    } finally { checkingDashboardAuth.current = false; }
-  };
+  const openWebsite = () => perform(async () => {
+    const origin = normalizeServerUrl(sessionRef.current?.serverUrl ?? serverUrl, __DEV__, ALLOW_LAN_HTTP);
+    try { await Linking.openURL(`${origin}/`); }
+    catch { throw new Error('Cannot open the website. Check that a browser is installed and try again.'); }
+  });
 
   if (starting) {
     return <SafeAreaView style={styles.center}><ActivityIndicator color="#267957" /><Text style={styles.body}>Opening Forma…</Text></SafeAreaView>;
@@ -313,7 +288,7 @@ function Content() {
         {session && !status?.onboarded && <Button title="Collect locally without connecting" secondary disabled={busy || !localConsent} onPress={startLocally} />}
       </View>
       {session && <Button title="Sign out · keep collecting locally" secondary disabled={busy} onPress={logout} />}
-    </ScrollView> : session && status?.connected ? <View style={styles.flex}>
+    </ScrollView> : session && status?.connected ? <ScrollView contentContainerStyle={styles.content}>
       {collectionPanel}
       <View style={styles.syncBar}>
         <Text style={styles.cardTitle}>{status.enabled ? 'Hourly uploads enabled' : 'Uploads paused'}</Text>
@@ -324,32 +299,19 @@ function Content() {
           <Button title={status.enabled ? 'Pause uploads' : 'Resume uploads'} secondary disabled={busy} onPress={() => perform(() => status.enabled ? dataSync.pauseSync() : dataSync.resumeSync())} />
         </View>
       </View>
-      {webError ? <View style={styles.center}><Text style={styles.errorText}>{webError}</Text><Button title="Reload dashboard" onPress={() => { setWebError(''); setWebKey(k => k + 1); }} /></View> :
-        <WebView key={`${session.user.id}-${webKey}`} style={styles.flex}
-          source={{uri: `${session.serverUrl}/api/native/dashboard`, headers: {Authorization: `Bearer ${session.token}`}}}
-          originWhitelist={[session.serverUrl]} javaScriptEnabled domStorageEnabled
-          sharedCookiesEnabled thirdPartyCookiesEnabled={false} mixedContentMode="never"
-          injectedJavaScriptBeforeContentLoaded={DASHBOARD_AUTH_BRIDGE} injectedJavaScript={DASHBOARD_AUTH_BRIDGE}
-          onMessage={event => {
-            const authEvent = dashboardAuthEvent(event.nativeEvent.data, event.nativeEvent.url, session.serverUrl);
-            if (authEvent) { void handleDashboardAuth(authEvent, session.token); }
-          }}
-          allowFileAccess={false} allowFileAccessFromFileURLs={false} allowUniversalAccessFromFileURLs={false}
-          setSupportMultipleWindows={false} startInLoadingState
-          onShouldStartLoadWithRequest={request => isDashboardNavigationAllowed(request.url, session.serverUrl)}
-          renderLoading={() => <ActivityIndicator color="#267957" style={styles.spinner} />}
-          onError={() => setWebError('Cannot open your dashboard. Check your server connection and reload.')}
-          onHttpError={event => {
-            if (event.nativeEvent.statusCode === 401) { void handleDashboardAuth('auth-required', session.token); }
-            else if (event.nativeEvent.statusCode >= 400) { setWebError(`Dashboard returned ${event.nativeEvent.statusCode}. Check that the web app has been built on the server.`); }
-          }} />}
-    </View> : <ScrollView contentContainerStyle={styles.content}>
+      <View style={styles.card}>
+        <Text style={styles.cardTitle}>Forma website</Text>
+        <Text selectable style={styles.body}>{session.serverUrl}</Text>
+        <Text style={styles.hint}>Opens in your browser. Sign in there if needed.</Text>
+        <Button title="Open website" disabled={busy} onPress={openWebsite} />
+      </View>
+    </ScrollView> : <ScrollView contentContainerStyle={styles.content}>
       <Text style={styles.kicker}>LOCAL DASHBOARD</Text><Text style={styles.title}>Your data stays with you.</Text>
       <Text style={styles.body}>Granted sources are collected into an encrypted queue on this device. Collection continues without a server connection; available history is retried after interruptions.</Text>
       <View style={styles.card}>{collectionPanel}</View>
       <View style={styles.card}>
         <Text style={styles.cardTitle}>Connect when you are ready</Text>
-        <Text style={styles.body}>{session ? `Signed in as ${session.user.email}. Choose to connect this device before local data uploads to ${session.serverUrl}.` : 'Sign in to your Forma server and review upload consent to send saved data and open your web dashboard.'}</Text>
+        <Text style={styles.body}>{session ? `Signed in as ${session.user.email}. Choose to connect this device before local data uploads to ${session.serverUrl}.` : 'Sign in to your Forma server and review upload consent to send saved data to it.'}</Text>
         {status?.authRequired && <Text style={styles.errorText}>Your server session expired. Sign in again to resume uploads.</Text>}
         {!!status?.lastError && <Text style={styles.hint}>{status.lastError}</Text>}
         <Button title={session ? 'Connect account & review upload consent' : 'Sign in to sync'} disabled={busy}
