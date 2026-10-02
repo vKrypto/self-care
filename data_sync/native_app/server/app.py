@@ -25,6 +25,7 @@ from starlette.staticfiles import StaticFiles
 from starlette.types import ASGIApp, Receive, Scope, Send
 
 from backend import server as planner
+from . import device_api
 
 
 MAX_BATCH_BYTES = 8 * 1024 * 1024
@@ -205,6 +206,9 @@ def init_native_db():
             CREATE INDEX IF NOT EXISTS native_batches_tenant_received
                 ON native_batches(tenant, received_at_ms DESC);
         """)
+        device_api.init_device_history_db(con)
+        from .wellbeing import init_wellbeing_db
+        init_wellbeing_db(con)
 
 
 def bearer_token(request: Request) -> str:
@@ -344,6 +348,7 @@ async def register_device(request: Request, account=Depends(native_account)):
     timestamp = int(time.time() * 1000)
     with planner.connect() as con:
         con.execute("BEGIN IMMEDIATE")
+        device_api.reject_revoked_device(con, account["id"], identifier)
         existing = con.execute("SELECT tenant FROM native_devices WHERE device_id=?", (identifier,)).fetchone()
         if existing and existing["tenant"] != account["id"]:
             raise HTTPException(409, "This device identifier is already registered. Create a new identifier for this account.")
@@ -355,6 +360,7 @@ async def register_device(request: Request, account=Depends(native_account)):
             history_days=excluded.history_days, updated_at_ms=excluded.updated_at_ms""",
             (identifier, account["id"], body.platform, body.name, body.sync_interval_minutes,
              body.consent_version, body.history_days, timestamp, timestamp))
+        device_api.ensure_device_stats(con, account["id"], identifier, timestamp)
     return {"device_id": identifier}
 
 
@@ -377,10 +383,11 @@ async def ingest_batch(request: Request, account=Depends(native_account)):
     received = int(time.time() * 1000)
     with planner.connect() as con:
         con.execute("BEGIN IMMEDIATE")
+        device_api.reject_revoked_device(con, account["id"], device)
         owned = con.execute("SELECT device_id FROM native_devices WHERE device_id=? AND tenant=?", (device, account["id"])).fetchone()
         if not owned:
             raise HTTPException(404, "Register this device for the signed-in account before syncing.")
-        duplicate = con.execute("SELECT payload_sha256 FROM native_batches WHERE tenant=? AND batch_id=?", (account["id"], identifier)).fetchone()
+        duplicate = con.execute("SELECT payload_sha256 FROM native_seen_batches WHERE tenant=? AND batch_id=?", (account["id"], identifier)).fetchone()
         if duplicate:
             if duplicate["payload_sha256"] != digest:
                 raise HTTPException(409, "Batch identifier already exists with different data.")
@@ -388,6 +395,10 @@ async def ingest_batch(request: Request, account=Depends(native_account)):
         con.execute("INSERT INTO native_batches VALUES(?,?,?,?,?,?,?,?,?,?,?)",
                     (account["id"], identifier, device, body.schema_version, body.window.start_ms,
                      body.window.end_ms, body.collected_at_ms, received, digest, len(encoded), payload))
+        device_api.record_device_sync(con, account["id"], device, identifier, digest,
+                                      received, body.window.end_ms)
+        from .wellbeing import derive_batch
+        derive_batch(con, account["id"], device, identifier, body.model_dump(mode="json"), received)
         prune_tenant_batches(con, account["id"], received)
     return {"batch_id": identifier, "accepted": True, "duplicate": False}
 
@@ -449,7 +460,9 @@ if not getattr(app.state, "native_sync_installed", False):
 
     app.router.lifespan_context = native_lifespan
     app.add_middleware(NativeBodyLimitMiddleware)
+    app.add_middleware(device_api.PrivateDeviceResponseMiddleware)
     app.include_router(router)
+    app.include_router(device_api.router)
     # A single origin gives WebView the same HttpOnly cookie as the existing UI.
     # Build the unchanged planner frontend with `npm run build` before launch.
     frontend_dist = Path(os.getenv("NATIVE_FRONTEND_DIST", str(Path(__file__).resolve().parents[3] / "dist"))).resolve()
