@@ -17,9 +17,10 @@ import time
 from typing import Any, Literal
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, Security
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
-from pydantic import BaseModel, ConfigDict, EmailStr, Field, ValidationError, model_validator
+from fastapi.security import HTTPBearer
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, ValidationError, field_validator, model_validator
 from starlette.staticfiles import StaticFiles
 from starlette.types import ASGIApp, Receive, Scope, Send
 
@@ -38,7 +39,8 @@ DAY_MS = 86_400_000
 SECRET_KEYS = {
     "password", "passwordhash", "passphrase", "authorization", "accesstoken",
     "refreshtoken", "clientsecret", "sessiontoken", "cookie", "cookies",
-    "secret", "token", "credentials", "credential", "apikey",
+    "secret", "token", "credentials", "credential", "apikey", "bearertoken",
+    "idtoken", "formasession",
 }
 
 
@@ -49,6 +51,12 @@ class StrictModel(BaseModel):
 class NativeLogin(StrictModel):
     email: EmailStr
     password: str = Field(min_length=1, max_length=128)
+
+    @field_validator("password")
+    @classmethod
+    def valid_password_text(cls, value):
+        value.encode("utf-8")
+        return value
 
 
 class DeviceRegistration(StrictModel):
@@ -64,6 +72,7 @@ class DeviceRegistration(StrictModel):
         self.name = self.name.strip()
         if not self.name:
             raise ValueError("Device name must not be blank.")
+        self.name.encode("utf-8")
         return self
 
 
@@ -89,6 +98,13 @@ class NativeBatch(StrictModel):
     collected_at_ms: int = Field(ge=0, strict=True)
     permissions: dict[str, Any]
     data: dict[str, Any]
+
+    @field_validator("schema_version", mode="before")
+    @classmethod
+    def strict_schema_version(cls, value):
+        if type(value) is not int:
+            raise ValueError("Schema version must be an integer.")
+        return value
 
     @model_validator(mode="after")
     def valid_collection_time(self):
@@ -199,7 +215,10 @@ def bearer_token(request: Request) -> str:
     return token
 
 
-def native_account(request: Request):
+native_bearer = HTTPBearer(auto_error=False, scheme_name="Native session")
+
+
+def native_account(request: Request, _authorization=Security(native_bearer)):
     return planner.resolve_session(bearer_token(request))
 
 
@@ -238,7 +257,7 @@ def forbid_secrets(value):
         if isinstance(item, dict):
             for key, nested in item.items():
                 normalized = re.sub(r"[^a-z0-9]", "", key.lower())
-                if normalized in SECRET_KEYS:
+                if normalized in SECRET_KEYS or "password" in normalized or normalized.endswith("secret") or normalized.endswith("token"):
                     raise HTTPException(422, "Credentials must never be included in export data.")
                 stack.append((nested, depth + 1))
         elif isinstance(item, list):
@@ -276,10 +295,28 @@ def prune_tenant_batches(con, tenant, received_at_ms):
                 (tenant, tenant, MAX_TENANT_RECEIPTS))
 
 
+def documented_body(model):
+    # Inline Pydantic's small nested schemas because bodies are parsed manually
+    # to reject duplicate keys and keep error responses free of private values.
+    schema = model.model_json_schema()
+    definitions = schema.pop("$defs", {})
+
+    def expand(value):
+        if isinstance(value, dict):
+            if "$ref" in value and value["$ref"].startswith("#/$defs/"):
+                return expand(definitions[value["$ref"].split("/")[-1]])
+            return {key: expand(nested) for key, nested in value.items()}
+        if isinstance(value, list):
+            return [expand(nested) for nested in value]
+        return value
+
+    return {"requestBody": {"required": True, "content": {"application/json": {"schema": expand(schema)}}}}
+
+
 router = APIRouter(prefix="/api/native", tags=["Android data sync"])
 
 
-@router.post("/login")
+@router.post("/login", openapi_extra=documented_body(NativeLogin))
 async def login(request: Request, response: Response):
     body = await validated_body(request, NativeLogin)
     with planner.connect() as con:
@@ -300,7 +337,7 @@ def me(response: Response, account=Depends(native_account)):
     return {"user": planner.public(account)}
 
 
-@router.post("/devices")
+@router.post("/devices", openapi_extra=documented_body(DeviceRegistration))
 async def register_device(request: Request, account=Depends(native_account)):
     body = await validated_body(request, DeviceRegistration)
     identifier = str(body.device_id)
@@ -321,15 +358,18 @@ async def register_device(request: Request, account=Depends(native_account)):
     return {"device_id": identifier}
 
 
-@router.post("/batches")
+@router.post("/batches", openapi_extra=documented_body(NativeBatch))
 async def ingest_batch(request: Request, account=Depends(native_account)):
     body = await validated_body(request, NativeBatch)
     if str(body.user_id) != account["id"]:
         raise HTTPException(403, "Export user does not match the signed-in account.")
     forbid_secrets(body.permissions)
     forbid_secrets(body.data)
-    payload = json.dumps(body.model_dump(mode="json"), ensure_ascii=False, separators=(",", ":"), sort_keys=True, allow_nan=False)
-    encoded = payload.encode("utf-8")
+    try:
+        payload = json.dumps(body.model_dump(mode="json"), ensure_ascii=False, separators=(",", ":"), sort_keys=True, allow_nan=False)
+        encoded = payload.encode("utf-8")
+    except (UnicodeError, ValueError):
+        raise HTTPException(422, "Batch must contain valid UTF-8 strings and finite JSON numbers.") from None
     if len(encoded) > MAX_BATCH_BYTES:
         raise HTTPException(413, "Batch exceeds the 8 MiB limit. Split it into smaller windows.")
     digest = hashlib.sha256(encoded).hexdigest()
@@ -412,7 +452,7 @@ if not getattr(app.state, "native_sync_installed", False):
     app.include_router(router)
     # A single origin gives WebView the same HttpOnly cookie as the existing UI.
     # Build the unchanged planner frontend with `npm run build` before launch.
-    frontend_dist = Path(os.getenv("NATIVE_FRONTEND_DIST", str(Path(__file__).resolve().parents[4] / "dist"))).resolve()
+    frontend_dist = Path(os.getenv("NATIVE_FRONTEND_DIST", str(Path(__file__).resolve().parents[3] / "dist"))).resolve()
     if (frontend_dist / "assets").is_dir():
         app.mount("/assets", StaticFiles(directory=frontend_dist / "assets"), name="native-dashboard-assets")
     if (frontend_dist / "library").is_dir():

@@ -8,3 +8,8 @@
 #   http://developer.android.com/guide/developing/tools/proguard.html
 
 # Add any project specific keep options here:
+
+# The health exporter preserves nested source metadata, unit values, stages and
+# samples through SDK public properties. Keep their names if minification is enabled.
+-keep class androidx.health.connect.client.records.** { public *; }
+-keep class androidx.health.connect.client.units.** { public *; }

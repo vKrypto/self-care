@@ -51,12 +51,15 @@ internal object HealthRecordJson {
                 Modifier.isPublic(method.modifiers) && !Modifier.isStatic(method.modifiers) &&
                     method.parameterTypes.isEmpty() && method.returnType != Void.TYPE &&
                     method.name != "getClass" && !method.isSynthetic &&
-                    (method.name.startsWith("get") || method.name.startsWith("is"))
+                    (method.name.startsWith("get") || method.name.startsWith("is") || method.name == "hasExplicitTime")
             }
             .sortedBy { it.name }
             .forEach { method ->
-                val property = method.name.substring(if (method.name.startsWith("get")) 3 else 2)
-                    .replaceFirstChar { it.lowercaseChar() }
+                val property = when {
+                    method.name.startsWith("get") -> method.name.substring(3).replaceFirstChar { it.lowercaseChar() }
+                    method.name.startsWith("is") -> method.name.substring(2).replaceFirstChar { it.lowercaseChar() }
+                    else -> method.name
+                }
                 result.put(property, encode(method.invoke(value), depth + 1))
             }
         return result

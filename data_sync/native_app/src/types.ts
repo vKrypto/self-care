@@ -1,6 +1,9 @@
 export interface User { id: string; email: string; name: string; role: string }
 export interface Session { serverUrl: string; token: string; user: User; onboarded: boolean }
 export interface HealthStatus {
+  granted_permissions?: string[]; requested_permissions?: string[];
+  background_supported?: boolean; background_granted?: boolean;
+  history_supported?: boolean; history_granted?: boolean;
   availability?: string; status?: string; available?: boolean;
   grantedPermissions?: string[]; requestedPermissions?: string[];
   granted?: string[]; backgroundRead?: boolean; historyRead?: boolean;

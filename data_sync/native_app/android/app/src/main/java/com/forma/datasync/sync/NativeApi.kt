@@ -61,8 +61,8 @@ class NativeApi(private val serverUrl: String, private val token: String? = null
             val uri = try { URI(value.trim()) } catch (_: Exception) {
                 throw IllegalArgumentException("Enter a valid server URL, including https://.")
             }
-            require(!uri.host.isNullOrBlank() && uri.userInfo == null && uri.query == null && uri.fragment == null) {
-                "Enter a server URL without credentials, query parameters, or a fragment."
+            require(!uri.host.isNullOrBlank() && uri.userInfo == null && uri.query == null && uri.fragment == null && (uri.path.isNullOrEmpty() || uri.path == "/")) {
+                "Enter a server URL without a path, credentials, query parameters, or a fragment."
             }
             require(uri.scheme == "https" || (BuildConfig.DEBUG && uri.scheme == "http")) {
                 "Use HTTPS for the server URL. HTTP is available in debug builds only."

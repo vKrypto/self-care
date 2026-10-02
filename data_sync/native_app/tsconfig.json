@@ -1,5 +1,5 @@
 {
   "extends": "@react-native/typescript-config",
-  "compilerOptions": {"strict": true, "noEmit": true},
+  "compilerOptions": {"strict": true, "noEmit": true, "types": ["react", "react-native", "node"]},
   "include": ["src/**/*.ts", "src/**/*.tsx", "tests/**/*.ts"]
 }
