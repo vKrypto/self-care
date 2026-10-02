@@ -42,6 +42,11 @@ account authorizes uploads of anonymous queued records; records already assigned
 to another account cannot be uploaded through the current account. Signing out
 stops uploads while local collection continues.
 
+The current Android app opens the server origin in an external browser using
+**Open website**. It does not pass native credentials to the browser, whose
+login session is independent. The cookie bootstrap endpoints below remain
+available for older native clients and other integrations.
+
 Hourly collection and upload scheduling run separately on the phone with Android WorkManager.
 Registration records the requested 60-minute schedule; server cron cannot
 collect data from a sleeping phone. WorkManager execution can be delayed by
@@ -68,8 +73,8 @@ password or token in `data` or `permissions`.
 | `POST /api/native/batches` | Batch below | `{batch_id,accepted:true,duplicate:false}`; exact retries return `duplicate:true` |
 | `GET /api/native/status` | Bearer token | `{devices,last_batches,retention}`; metadata for only the signed-in account |
 | `POST /api/native/web-session` | Bearer token | `{ok:true}` and an HttpOnly cookie for the same session |
-| `GET /api/native/dashboard` | Bearer header on initial WebView request, or existing session cookie | Sets the same session cookie and redirects to `/` with HTTP 303 |
-| `POST /api/native/logout` | Bearer token | `{ok:true}`; revokes the shared native/WebView session |
+| `GET /api/native/dashboard` | Bearer header from an older native client, or existing session cookie | Sets the same session cookie and redirects to `/` with HTTP 303 |
+| `POST /api/native/logout` | Bearer token | `{ok:true}`; revokes the provided native session |
 
 `expires_at` is an ISO 8601 UTC timestamp. `device_id`, `batch_id` and `user_id`
 must be UUIDs. Re-registering an owned device updates its consent/settings;

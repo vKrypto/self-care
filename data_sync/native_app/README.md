@@ -138,13 +138,15 @@ configure your own signing key when distributing a release.
 4. Sign in and accept upload consent in connection settings to register the
    device and enable a separate hourly upload worker requiring a network. This
    sends eligible queued records and newly collected data. The connected
-   dashboard opens the current Forma web app with the same HttpOnly session
-   cookie and provides upload status, **Sync now**, upload pause/resume and
-   connection settings.
-5. Sign out removes the native session and WebView cookies and cancels uploads.
-   Local collection and queued records remain. The web dashboard's sign-out and
-   expired sessions also stop the native connection and leave local collection
-   available. Pause collection explicitly to stop collecting.
+   dashboard provides upload status, **Sync now**, upload pause/resume and
+   connection settings. **Open website** launches the configured server origin
+   in the phone's external browser, with no token or password in the URL. The
+   browser may ask you to sign in; its session is independent of the collector.
+5. Sign out in the app removes its native session and cancels uploads.
+   Local collection and queued records remain. Native session expiry also
+   stops uploads. Browser sign-out affects only the browser session; use the
+   app's sign-out or upload pause control to stop the collector uploading.
+   Pause collection explicitly to stop collecting.
 6. Open **Sync history** from either dashboard. Tap a collection job to review
    its sources, records, collected time windows and upload receipts. This works
    locally without signing in; successfully uploaded records remain viewable
@@ -301,7 +303,7 @@ Expired sessions stop uploads and require another login; local collection contin
 | `POST /api/native/devices` | Register or update an owned Android device and consent |
 | `POST /api/native/batches` | Validate and acknowledge an owned export batch |
 | `GET /api/native/status` | Owned devices and last 20 batch receipts |
-| `GET /api/native/dashboard` | Bearer-to-HttpOnly-cookie dashboard bootstrap |
+| `GET /api/native/dashboard` | Cookie bootstrap retained for older native clients |
 | `POST /api/native/web-session` | Optional cookie bootstrap for other native clients |
 | `POST /api/native/logout` | Revoke the current session |
 
@@ -336,7 +338,7 @@ pause/resume. Sync history checks covered importing existing queued batches,
 manual and background job entries, opening actual app metadata records,
 loading additional record pages, denied-source summaries, Android Back
 navigation, and preserving history after a process restart. The current checks
-passed 77 Android unit tests and 23 TypeScript tests; Android lint reported no
+passed 77 Android unit tests and 17 TypeScript tests; Android lint reported no
 errors. Automated checks cover archive retention and acknowledgements, queue
 recovery, ownership, permissions, and lifecycle routing. A real server upload
 was not part of the initial history device check; server ingestion has separate
@@ -345,7 +347,10 @@ tests. The later LAN check verified updating from `0.3.0-preview` to
 and a live signed-in device with successful uploads confirmed by server batch
 receipts. The LAN variant's private-address validation, standalone bundle,
 signing compatibility, test defaults, and variant-specific transport settings
-were also checked. Health
+were also checked. Updating to `0.3.3-lan-preview` retained the active collection
+and upload settings; the native dashboard had no embedded website, and tapping
+**Open website** launched the device's separate browser at the configured LAN
+address. Health
 Connect categories still need validation on a phone with populated records.
 
 Further device validation should cover a real Android phone with populated usage and
@@ -355,7 +360,8 @@ deny then grant a category, grant health history later, check an expired
 session, pause collection separately from uploads, sign out and verify continued
 local collection, and switch accounts without uploading another account's queue.
 Check that acknowledged receipts appear at
-`/api/native/status` and that the existing authenticated dashboard opens. There
+`/api/native/status` and that **Open website** launches the configured server
+in a browser. There
 is no iOS build or native chart/dashboard implementation in this phase.
 
 Implementation references: [React Native environment setup](https://reactnative.dev/docs/set-up-your-environment),

@@ -3,7 +3,7 @@
 The Android app and companion server live in [`native_app/`](native_app/).
 The app lets you skip login and collect permitted Android data locally. Sign in
 to an existing Forma account and connect a server to upload queued data in the
-background and open the current dashboard.
+background. **Open website** opens the current dashboard in your phone's browser.
 See the [app README](native_app/README.md) for collectors, permissions, and the
 upload contract.
 
@@ -45,6 +45,11 @@ The current LAN test APK prefills the requested test server
 remain editable. The header shows **LAN preview** and its version. An HTTPS-only
 error means the regular preview is installed: install the LAN APK as an update.
 These test defaults are excluded from the normal preview and release variants.
+
+The connected app shows collection and upload controls, **Sync history**, and
+an **Open website** button. The website opens in the external browser, which may
+ask you to sign in. Browser login/logout and the app's upload session are
+independent; use the app's controls to pause uploads or sign out of the collector.
 
 Collection runs hourly without a network requirement. Uploads run separately
 when the app has an authenticated server connection and network access. Signing

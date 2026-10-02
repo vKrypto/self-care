@@ -4,7 +4,7 @@ React frontend, FastAPI backend, SQLite database, tenant-scoped local media, and
 
 Phase 2 adds authenticated MCP access, daily progress photos, date-level tracking, and adherence feedback.
 
-Phase 3 adds an Android data collector with optional login, permission onboarding, encrypted offline collection, hourly background sync when connected, and the existing dashboard in a WebView. See the [Android setup and APK build guide](data_sync/README.md).
+Phase 3 adds an Android data collector with optional login, permission onboarding, encrypted offline collection, hourly background sync when connected, and a link to open the website in your browser. See the [Android setup and APK build guide](data_sync/README.md).
 
 ## Start
 
@@ -241,7 +241,7 @@ The transport follows the official [Python SDK v1 documentation](https://py.sdk.
 
 ## Phase 3: Android data export and APK
 
-The Android app and companion server are in [`data_sync/native_app`](data_sync/native_app). Choose **Skip login** to collect permitted usage and health records locally without a server. Hourly collection runs on the device through WorkManager, including while offline. Sign in with an existing Forma account and connect a server to enable periodic uploads and the current dashboard in a WebView. Uploads use a session token; the password is used only at login. Signing out stops uploads while local collection continues. Collection and upload schedules can be delayed by Android power management.
+The Android app and companion server are in [`data_sync/native_app`](data_sync/native_app). Choose **Skip login** to collect permitted usage and health records locally without a server. Hourly collection runs on the device through WorkManager, including while offline. Sign in with an existing Forma account and connect a server to enable periodic uploads. **Open website** opens your configured server in the phone's browser. Uploads use a session token; the password is used only at login. Signing out stops uploads while local collection continues. Collection and upload schedules can be delayed by Android power management.
 
 The encrypted local queue is limited to 64 MiB. If it fills, collection reports an error and waits for space rather than deleting unuploaded records. After connecting, acknowledged batches leave the queue. Data already assigned to one account stays separate from other accounts.
 
