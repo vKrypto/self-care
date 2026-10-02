@@ -530,7 +530,8 @@ class AndroidCollector(context: Context) {
 
     private fun overflow(source: String, count: Int): JSONObject = section("error")
         .put("reason", "window_exceeds_record_limit").put("source", source).put("observed_count", count)
-        .put("retry_hint", "Split the history window and retry; the source cursor must remain unchanged.")
+        .put("retry_hint", "split_window")
+        .put("retry_note", "Split the history window and retry; the source cursor must remain unchanged.")
 
     private fun JSONObject.snapshot(): JSONObject = put("mode", "snapshot").put("captured_at_ms", System.currentTimeMillis())
 

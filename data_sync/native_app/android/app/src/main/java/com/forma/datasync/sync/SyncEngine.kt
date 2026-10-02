@@ -193,6 +193,24 @@ class SyncEngine(context: Context) {
             val snapshots = available.filter { probe.getJSONObject(it).optString("mode") == "snapshot" }.toMutableSet()
             val historical = available.filterNot { it in snapshots || it == "health_status" }.toMutableList()
             val failedSources = mutableSetOf<String>()
+            fun excludeFailedSource(source: String) {
+                available.remove(source)
+                historical.remove(source)
+                snapshots.remove(source)
+                failedSources.add(source)
+            }
+            fun shrinkOrExclude(duration: Long, sources: Collection<String>) {
+                val reduced = SyncPlanner.smallerChunk(duration)
+                if (reduced != null) store.update { it.put("chunkMs", reduced) }
+                else {
+                    check(sources.isNotEmpty()) { "A minimal metadata batch exceeds the server limit." }
+                    sources.forEach { source -> excludeFailedSource(source) }
+                }
+            }
+            fun largestSource(data: JSONObject): List<String> = data.keys().asSequence()
+                .filter { it != "source_status" }
+                .maxByOrNull { data.getJSONObject(it).toString().toByteArray(Charsets.UTF_8).size }
+                ?.let { listOf(it) } ?: emptyList()
             val current = store.read()
             if (store.readPending() == null && now - current.optLong("lastRollingRefreshAttemptAt") >= 60 * 60 * 1000) {
                 val cursors = current.optJSONObject("cursors") ?: JSONObject()
@@ -255,11 +273,13 @@ class SyncEngine(context: Context) {
                         }
                         sourceSummary.put(summary)
                     }
-                    val overflowing = data.keys().asSequence().any { source ->
-                        data.getJSONObject(source).optString("retry_hint") == "split_window"
-                    }
-                    if (overflowing) {
-                        shrinkChunk(window.end - window.start)
+                    val overflowing = data.keys().asSequence().filter { source ->
+                        val section = data.getJSONObject(source)
+                        section.optString("retry_hint") == "split_window" ||
+                            section.optString("reason") == "window_exceeds_record_limit"
+                    }.toList()
+                    if (overflowing.isNotEmpty()) {
+                        shrinkOrExclude(window.end - window.start, overflowing)
                         continue
                     }
                     val updates = JSONObject()
@@ -299,7 +319,7 @@ class SyncEngine(context: Context) {
                         .put("permissions", PermissionStatus.read(appContext))
                         .put("data", data)
                     if (payload.toString().toByteArray(Charsets.UTF_8).size > MAX_PAYLOAD_BYTES) {
-                        shrinkChunk(window.end - window.start)
+                        shrinkOrExclude(window.end - window.start, largestSource(data))
                         continue
                     }
                     pending = JSONObject().put("payload", payload).put("cursorUpdates", updates)
@@ -315,7 +335,7 @@ class SyncEngine(context: Context) {
                 } catch (error: ApiException) {
                     if (error.status != 413) throw error
                     val window = payload.getJSONObject("window")
-                    shrinkChunk(window.getLong("end_ms") - window.getLong("start_ms"))
+                    shrinkOrExclude(window.getLong("end_ms") - window.getLong("start_ms"), largestSource(payload.getJSONObject("data")))
                     store.clearPending()
                     continue
                 }
@@ -348,20 +368,10 @@ class SyncEngine(context: Context) {
                     false
                 } else throw error
             }
-        } catch (error: OversizedBatchException) {
-            store.update { it.put("enabled", false).put("lastError", error.message) }
-            SyncScheduler.cancel(appContext)
-            false
         } catch (error: Exception) {
             store.update { it.put("lastError", "Sync could not complete. Check your connection and granted permissions; the pending batch is retained.") }
             throw error
         }
-    }
-
-    private fun shrinkChunk(current: Long) {
-        val reduced = SyncPlanner.smallerChunk(current)
-            ?: throw OversizedBatchException("A minimal data batch still exceeds the server limit. Sync is paused; increase the server upload limit before resuming.")
-        store.update { it.put("chunkMs", reduced) }
     }
 
     private fun invalidateAuth() {
@@ -382,8 +392,6 @@ class SyncEngine(context: Context) {
 
     private fun isComplete(section: JSONObject?) =
         section?.optString("status") == "ok" && section.optBoolean("complete", true)
-
-    private class OversizedBatchException(message: String) : Exception(message)
 
     companion object {
         private val lock = Mutex()
