@@ -163,6 +163,59 @@ class LocalBatchQueueTest {
         assertEquals(1, outbox.stats().getInt("queuedBatches"))
     }
 
+    @Test fun fullQueueSkipsManyBlockedGuestsWithoutClaimingOrConsumingClaimHeadroom() {
+        val directory = temporary.newFolder()
+        val blocked = List(32) { batch() }
+        val permitted = batch()
+        val allBatches = blocked + permitted
+        val originalBytes = allBatches.sumOf { encode(it.toString()).toByteArray().size.toLong() }
+        val reserve = 1024L
+        val outbox = queue(directory, originalBytes + reserve, reserve)
+        allBatches.forEach(outbox::append)
+        expect<LocalQueueFullException> { outbox.append(batch()) }
+
+        var evaluated = 0
+        val selected = outbox.next(server, user, device, canUpload = { projected ->
+            evaluated++
+            // The engine can evaluate the same owned body that would be uploaded.
+            assertEquals(user, projected.getJSONObject("owner").getString("userId"))
+            assertEquals(user, projected.getJSONObject("payload").getString("user_id"))
+            id(projected) == id(permitted)
+        })!!
+        assertEquals(33, evaluated)
+        assertEquals(id(permitted), id(selected))
+        assertTrue(outbox.stats().getLong("queuedBytes") <= originalBytes + reserve)
+
+        val blockedIds = blocked.map(::id).toSet()
+        for (file in directory.listFiles()!!) {
+            val stored = JSONObject(decode(file.readText()))
+            if (id(stored) in blockedIds) {
+                assertTrue(stored.isNull("owner"))
+                assertFalse(stored.getJSONObject("payload").has("user_id"))
+            }
+        }
+        outbox.remove(id(selected))
+        // Skipped guest history can still belong to a later explicitly connected account.
+        val later = queue(directory, originalBytes + reserve, reserve)
+            .next(server, "another-account", device)!!
+        assertEquals(id(blocked.first()), id(later))
+        assertEquals("another-account", later.getJSONObject("owner").getString("userId"))
+    }
+
+    @Test fun aBlockedOwnedHeadDoesNotPreventAPermittedGuestBatchUploading() {
+        val directory = temporary.newFolder()
+        val blocked = batch(owner = owner())
+        val permitted = batch()
+        val outbox = queue(directory)
+        outbox.append(blocked)
+        outbox.append(permitted)
+
+        val selected = outbox.next(server, user, device, canUpload = { id(it) != id(blocked) })!!
+        assertEquals(id(permitted), id(selected))
+        outbox.remove(id(selected))
+        assertEquals(id(blocked), id(queue(directory).next(server, user, device)!!))
+    }
+
     @Test fun abnormallyLargeClaimCannotExceedStorageCapOrCorruptItsGuestRecord() {
         val directory = temporary.newFolder()
         val first = batch()

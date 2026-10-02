@@ -237,11 +237,11 @@ Expired sessions stop uploads and require another login; local collection contin
 Native records live in `native_devices` and `native_batches` in the existing
 Forma SQLite database. Raw batches are retained for up to 90 days / 256 MiB per
 user; receipts for up to 365 days / 50,000 batches per user. Pruning runs on
-ingestion. Existing account deletion cascades to these rows. Grant revocation or
-sign-out stops uploads and removes the local session while collection and queued
-records remain. It does not delete exports already stored on the server.
-Server-side disk encryption and access controls
-remain the deployment operator's responsibility.
+ingestion. Existing account deletion cascades to these rows. Grant revocation
+blocks affected future reads and queued uploads. Signing out stops uploads and
+removes the local session while collection and queued records remain. Neither
+deletes exports already stored on the server. Server-side disk encryption and
+access controls remain the deployment operator's responsibility.
 
 ## Verify
 
@@ -258,7 +258,14 @@ cd android
 .venv/bin/python -m pytest data_sync/native_app/server/tests -q
 ```
 
-Device validation should cover a real Android phone with populated usage and
+The Android 15 (API 35) smoke check covered updating the installed preview APK,
+skipping login, granting Usage Access, collecting without an account/server,
+keeping the local queue after an app restart, and separate collection
+pause/resume. Automated checks cover queue recovery, ownership, permissions,
+lifecycle routing, and server ingestion. Health Connect categories still need
+validation on a phone with populated records.
+
+Further device validation should cover a real Android phone with populated usage and
 Health Connect data: skip login, complete local onboarding, collect in airplane
 mode, reopen after process death/reboot, connect later and upload the queue,
 deny then grant a category, grant health history later, check an expired
