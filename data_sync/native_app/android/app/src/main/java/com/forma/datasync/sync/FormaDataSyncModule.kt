@@ -45,7 +45,13 @@ class FormaDataSyncModule(private val context: ReactApplicationContext) : ReactC
 
     init { context.addActivityEventListener(activityListener) }
     override fun getName() = "FormaDataSync"
-    override fun getConstants(): Map<String, Any> = mapOf("allowLanHttp" to BuildConfig.ALLOW_LAN_HTTP)
+    override fun getConstants(): Map<String, Any> = mapOf(
+        "allowLanHttp" to BuildConfig.ALLOW_LAN_HTTP,
+        "defaultServerUrl" to BuildConfig.DEFAULT_SERVER_URL,
+        "defaultEmail" to BuildConfig.DEFAULT_EMAIL,
+        "defaultPassword" to BuildConfig.DEFAULT_PASSWORD,
+        "appVersion" to BuildConfig.VERSION_NAME,
+    )
 
     @ReactMethod fun restoreSession(promise: Promise) = resolve(promise) { engine.restoreSession() }
     @ReactMethod fun login(serverUrl: String, email: String, password: String, promise: Promise) =

@@ -3,6 +3,10 @@ import type {HistoryDetails, HistoryPage, HistoryRecordsPage, Permissions, Sessi
 
 interface DataSyncModule {
   readonly allowLanHttp: boolean;
+  readonly defaultServerUrl: string;
+  readonly defaultEmail: string;
+  readonly defaultPassword: string;
+  readonly appVersion: string;
   restoreSession(): Promise<Session | null>;
   login(serverUrl: string, email: string, password: string): Promise<Session>;
   permissionStatus(): Promise<Permissions>;

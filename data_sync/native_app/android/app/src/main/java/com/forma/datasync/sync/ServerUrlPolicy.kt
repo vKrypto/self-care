@@ -23,7 +23,7 @@ object ServerUrlPolicy {
         } == true
         require(scheme == "https" || (scheme == "http" && (development || privateHttp))) {
             if (allowLanHttp) "HTTP requires a private LAN IPv4 address, such as http://192.168.1.10:8000. Otherwise use HTTPS."
-            else "Use HTTPS for the server URL. HTTP is available in development builds only."
+            else "This build accepts HTTPS only. For a local HTTP server, install the LAN preview app."
         }
         val port = uri.port.takeUnless { (scheme == "https" && it == 443) || (scheme == "http" && it == 80) } ?: -1
         return URI(scheme, null, uri.host.lowercase(Locale.ROOT), port, null, null, null).toASCIIString()

@@ -15,6 +15,7 @@ import {isDashboardNavigationAllowed, normalizeServerUrl} from './validation';
 const CONSENT = 'I agree to upload the device usage, calendar, location and health data I grant access to, including sensitive health categories, to my configured Forma server. I can revoke permissions or pause uploads at any time.';
 const LOCAL_CONSENT = 'I agree to collect the device usage, calendar, location and health data I grant access to, including sensitive health categories, and store it encrypted on this device. I can revoke permissions or pause collection at any time.';
 const ALLOW_LAN_HTTP = dataSync.allowLanHttp === true;
+const BUILD_LABEL = `${ALLOW_LAN_HTTP ? 'LAN preview' : __DEV__ ? 'Development' : 'HTTPS preview'} · ${dataSync.appVersion}`;
 const HTTP_NOTICE = 'HTTP has no in-transit encryption: your sign-in details and uploaded data can be read on the network. Use it only on a trusted LAN for testing, or use HTTPS.';
 
 function Button({title, onPress, disabled = false, secondary = false}: {
@@ -44,9 +45,9 @@ function Content() {
   const [busy, setBusy] = useState(false);
   const [manualOperation, setManualOperation] = useState<'collect' | 'sync' | null>(null);
   const [error, setError] = useState('');
-  const [serverUrl, setServerUrl] = useState(__DEV__ ? 'http://10.0.2.2:8000' : '');
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
+  const [serverUrl, setServerUrl] = useState(ALLOW_LAN_HTTP ? dataSync.defaultServerUrl : __DEV__ ? 'http://10.0.2.2:8000' : '');
+  const [email, setEmail] = useState(ALLOW_LAN_HTTP ? dataSync.defaultEmail : '');
+  const [password, setPassword] = useState(ALLOW_LAN_HTTP ? dataSync.defaultPassword : '');
   const [permissions, setPermissions] = useState<Permissions | null>(null);
   const [status, setStatus] = useState<SyncStatus | null>(null);
   const [settings, setSettings] = useState(false);
@@ -104,7 +105,7 @@ function Content() {
     dataSync.restoreSession().then(saved => {
       if (!active || revision !== authRevision.current) { return; }
       rememberSession(saved);
-      if (saved) { setServerUrl(saved.serverUrl); setEmail(saved.user.email); }
+      if (saved) { setServerUrl(saved.serverUrl); setEmail(saved.user.email); setPassword(''); }
       return refresh();
     }).catch(() => {
       if (active && revision === authRevision.current) { setError('Unable to restore your server session. Local collection remains available.'); }
@@ -242,7 +243,8 @@ function Content() {
 
   return <SafeAreaView style={styles.screen}>
     <View style={styles.header}>
-      <View><Text style={styles.brand}>forma<Text style={styles.brandDot}>.</Text></Text><Text style={styles.eyebrow}>ANDROID DATA CONNECT</Text></View>
+      <View style={styles.brandBlock}><Text style={styles.brand}>forma<Text style={styles.brandDot}>.</Text></Text><Text style={styles.eyebrow}>ANDROID DATA CONNECT</Text>
+        <Text style={styles.buildLabel}>{BUILD_LABEL}</Text></View>
       {(status?.onboarded || session || onboarding) && <Button
         title={screen === 'login' ? 'Local dashboard' : onboarding ? (status?.onboarded ? 'Dashboard' : session ? 'Sign out' : 'Back') : 'Data settings'}
         secondary disabled={busy} onPress={() => {
@@ -367,6 +369,7 @@ const styles = StyleSheet.create({
   screen: {flex: 1, backgroundColor: '#f5f7f2'}, flex: {flex: 1},
   center: {flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24, gap: 16},
   header: {paddingHorizontal: 22, paddingVertical: 14, borderBottomWidth: 1, borderColor: '#e0e6da', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center'},
+  brandBlock: {flexShrink: 1, paddingRight: 10}, buildLabel: {fontSize: 10, lineHeight: 15, color: '#556452', marginTop: 4},
   brand: {fontSize: 32, fontWeight: '800', color: '#213c2b', letterSpacing: -1.5}, brandDot: {color: '#83b448'},
   eyebrow: {fontSize: 9, fontWeight: '700', letterSpacing: 2, color: '#768171'},
   content: {padding: 22, gap: 16, paddingBottom: 40}, kicker: {fontSize: 11, fontWeight: '700', letterSpacing: 2, color: '#267957'},

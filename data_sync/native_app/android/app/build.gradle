@@ -18,9 +18,12 @@ android {
         applicationId 'com.forma.datasync'
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 4
-        versionName '0.3.1'
+        versionCode 5
+        versionName '0.3.2'
         buildConfigField 'boolean', 'ALLOW_LAN_HTTP', 'false'
+        buildConfigField 'String', 'DEFAULT_SERVER_URL', '""'
+        buildConfigField 'String', 'DEFAULT_EMAIL', '""'
+        buildConfigField 'String', 'DEFAULT_PASSWORD', '""'
     }
     buildTypes {
         debug { }
@@ -44,6 +47,10 @@ android {
             applicationIdSuffix '.preview'
             versionNameSuffix '-lan-preview'
             buildConfigField 'boolean', 'ALLOW_LAN_HTTP', 'true'
+            // User-requested local test defaults; other builds leave these blank.
+            buildConfigField 'String', 'DEFAULT_SERVER_URL', '"http://192.168.100.8:8000"'
+            buildConfigField 'String', 'DEFAULT_EMAIL', '"admin@example.com"'
+            buildConfigField 'String', 'DEFAULT_PASSWORD', '"admin123"'
             resValue 'string', 'app_name', 'Forma Data Sync LAN Preview'
         }
     }

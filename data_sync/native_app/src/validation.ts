@@ -17,7 +17,7 @@ export function normalizeServerUrl(input: string, development: boolean, allowLan
   if (url.protocol !== 'https:' && !(url.protocol === 'http:' && (development || privateHttp))) {
     throw new Error(allowLanHttp
       ? 'HTTP requires a private LAN IPv4 address, such as http://192.168.1.10:8000. Otherwise use HTTPS.'
-      : 'Use an HTTPS server URL. HTTP is available in development builds.');
+      : 'This build accepts HTTPS only. For a local HTTP server, install the LAN preview app.');
   }
   return url.origin;
 }

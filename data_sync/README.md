@@ -40,6 +40,12 @@ passwords, tokens, or collected records in transit; use it only for testing on
 a trusted LAN. HTTPS remains available and is required by the regular preview
 and release builds.
 
+The current LAN test APK prefills the requested test server
+`http://192.168.100.8:8000` and login `admin@example.com` / `admin123`; the fields
+remain editable. The header shows **LAN preview** and its version. An HTTPS-only
+error means the regular preview is installed: install the LAN APK as an update.
+These test defaults are excluded from the normal preview and release variants.
+
 Collection runs hourly without a network requirement. Uploads run separately
 when the app has an authenticated server connection and network access. Signing
 out leaves local collection running; pause collection explicitly to stop it.

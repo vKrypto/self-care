@@ -62,6 +62,15 @@ local records when installed as an update. The generated download is
 [`../apk/forma-data-sync-lan-preview.apk`](../apk/forma-data-sync-lan-preview.apk).
 For Windows, run `gradlew.bat assembleLan` from the `android` folder.
 
+At the user's request, this LAN test build prefills `http://192.168.100.8:8000`,
+`admin@example.com`, and `admin123`. These editable test defaults are compiled
+only into the LAN variant; normal preview/release defaults remain empty.
+The app header identifies the build and version. If you see **HTTPS preview**
+or an HTTPS-only error for your local URL, update it with the **LAN preview APK**.
+An existing signed-in session keeps its own server/account and clears the test
+password. Login still requires tapping **Sign in**, and uploads still require
+permission and consent onboarding.
+
 ## Run Android
 
 Use Node 22.11+, JDK 17, Android SDK platform 36 / build tools 36.0.0, NDK
@@ -330,10 +339,13 @@ navigation, and preserving history after a process restart. The current checks
 passed 77 Android unit tests and 23 TypeScript tests; Android lint reported no
 errors. Automated checks cover archive retention and acknowledgements, queue
 recovery, ownership, permissions, and lifecycle routing. A real server upload
-was not part of this device check; server ingestion has separate tests. The LAN
-variant's private-address validation, standalone bundle, signing compatibility,
-and variant-specific transport settings were checked; installed-device LAN
-login still needs verification. Health
+was not part of the initial history device check; server ingestion has separate
+tests. The later LAN check verified updating from `0.3.0-preview` to
+`0.3.2-lan-preview`, preserving nine queued batches, showing the LAN build label,
+and a live signed-in device with successful uploads confirmed by server batch
+receipts. The LAN variant's private-address validation, standalone bundle,
+signing compatibility, test defaults, and variant-specific transport settings
+were also checked. Health
 Connect categories still need validation on a phone with populated records.
 
 Further device validation should cover a real Android phone with populated usage and
