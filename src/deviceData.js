@@ -2,6 +2,7 @@ export const sourceLabels = {
   usage_stats: "App usage totals",
   usage_events: "App, screen & unlock events",
   usage_event_totals: "Screen & unlock summaries",
+  usage_event_stats: "Screen & unlock summaries",
   network_usage_wifi: "Wi-Fi usage",
   network_usage_mobile: "Mobile data usage",
   visible_apps: "App information",
@@ -52,8 +53,12 @@ export function formatTime(milliseconds, timezone = "Asia/Kolkata") {
 }
 
 export function sumAvailable(...values) {
-  const available = values.filter((value) => value != null && Number.isFinite(value));
-  return available.length ? available.reduce((total, value) => total + value, 0) : null;
+  const available = values.filter(
+    (value) => value != null && Number.isFinite(value),
+  );
+  return available.length
+    ? available.reduce((total, value) => total + value, 0)
+    : null;
 }
 
 export function weekBounds(day) {
@@ -67,8 +72,19 @@ export function weekBounds(day) {
 
 export function formatMetric(metric) {
   if (metric?.value == null || !Number.isFinite(metric.value)) return "No data";
-  if (metric.unit === "ms") return formatDuration(metric.value);
+  if (
+    metric.unit === "ms" &&
+    ["foreground", "screen", "sleep", "exercise", "mindfulness"].includes(
+      metric.key,
+    )
+  )
+    return formatDuration(metric.value);
   if (metric.unit === "bytes") return formatBytes(metric.value);
-  const value = new Intl.NumberFormat("en", { maximumFractionDigits: 1 }).format(metric.value);
+  const value = new Intl.NumberFormat(
+    "en",
+    metric.value !== 0 && Math.abs(metric.value) < 0.1
+      ? { maximumSignificantDigits: 4 }
+      : { maximumFractionDigits: 2 },
+  ).format(metric.value);
   return `${value}${metric.unit && !["count", "steps"].includes(metric.unit) ? ` ${metric.unit}` : ""}`;
 }

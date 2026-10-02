@@ -519,6 +519,10 @@ mcp=create_mcp(sys.modules[__name__])
 mcp_transport=MCPAuthMiddleware(mcp.streamable_http_app(),sys.modules[__name__])
 app.mount('/mcp',mcp_transport)
 
+# Install device ingestion and the account dashboard in both server entry points.
+# The extension is idempotent and shares this app, database, and cookie sessions.
+from data_sync.native_app.server import app as _native_sync_app
+
 if __name__=='__main__':
     import uvicorn
     uvicorn.run('backend.server:app',host='127.0.0.1',port=8000)

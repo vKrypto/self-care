@@ -258,7 +258,7 @@ npm run build:apk
 
 The script exports the universal APK at `data_sync/apk/forma-data-sync-preview.apk`, smaller APKs for each CPU architecture, and SHA-256 checksums. They include the JavaScript bundle, run without Metro, and are signed with a local debug key for testing. Local collection needs no server; enter a reachable **HTTPS** server URL when connecting this preview app. Production release builds need your own signing configuration. See [Choose a smaller APK](data_sync/README.md#choose-a-smaller-apk) for download links and device architecture checks.
 
-Start the companion server instead of the regular backend entry point when using Android exports. Run these commands from the repository root:
+Both the regular backend and companion entry points include Android ingestion and the Phase 4 browser APIs. For a phone on your LAN, the companion binds to all network interfaces by default. Run these commands from the repository root:
 
 ```sh
 .venv/bin/python -m pip install -r data_sync/native_app/server/requirements.txt
@@ -273,6 +273,26 @@ For a phone on the same trusted LAN, `npm run build:apk:lan` from `data_sync/nat
 Version `0.3.5` reduces the previous 51.98 MB download to 6.69 MB for ARM64, 6.79 MB for x86_64 (about 87% smaller), or 19.06 MB for universal compatibility. It also compresses the Hermes bytecode bundle; Android decompresses it at startup instead of directly memory-mapping it, adding some startup work for a smaller download. Install with `adb install -r` or choose **Update** on the phone to preserve the existing preview app's login, settings, queued records, and history.
 
 See [`data_sync/README.md`](data_sync/README.md) for prerequisites, SDK setup, Windows commands, APK installation, and troubleshooting. See the [native app README](data_sync/native_app/README.md) for available data sources, permissions, API details, and verification commands.
+
+## Phase 4: Connected devices and Digital wellbeing
+
+Open **Connected devices** in the web sidebar to see the devices registered to your account, their first and latest known sync dates, and successful unique sync counts. **Connect device** provides your server address, account email, available Android downloads, and permission/setup steps. The existing Android collector works with this update; no APK rebuild or reinstall is required. Connect it to the same server/account, accept upload consent, and tap **Sync now** to populate these views.
+
+Select a device to open its complete retained sync history. Each receipt shows its collection window and whether its raw export remains available. Open a receipt to inspect every exported source, permission/status metadata, and paginated records, or download the original JSON. **Remove device** asks for confirmation, deletes that device's server history and derived daily summaries, and blocks further uploads for its old identifier. Records stored on the phone remain under the app's local storage controls.
+
+**Digital wellbeing** provides daily and calendar-week views across your devices or for one selected device. It includes observed app foreground/screen time, app transitions and unlocks, network usage, and granted Health Connect records such as steps, sleep, exercise, hydration, nutrition, and body measurements. Metrics are stored against their dates as uploads arrive. Weeks contain all seven days; missing, denied, or unavailable data is labeled rather than filled with invented zeros. The profile timezone takes priority, followed by the device timezone and UTC. Source details remain available through the device history.
+
+Android aggregate usage/network buckets are estimates and can overlap; refreshed exports are deduplicated rather than added as hourly totals. Health values describe a selected reporting origin, with origin/method information, and do not claim to reproduce Health Connect's user-selected priority totals. Raw exports have a 90-day / 256 MiB account limit, receipts a 365-day / 50,000 limit, and derived summaries use up to 365 days of bounded retained facts. Unique sync counters and retry protection survive receipt pruning. Devices connected before this update are backfilled from retained receipts; earlier expired history cannot be reconstructed. See the [server README](data_sync/native_app/server/README.md#storage-retention-and-removal) for exact limits and removal behavior.
+
+Build the web UI with `npm run build` and restart your server. Either `.venv/bin/python -m backend.server` or `.venv/bin/python -m data_sync.native_app.server` installs the same device APIs; the companion defaults to `0.0.0.0:8000`. The Android app's **Open website** opens the browser, where you sign in independently of the app's upload session.
+
+```sh
+.venv/bin/python -m pytest backend/tests data_sync/native_app/server/tests -q
+npm run build
+npx playwright test tests/devices.spec.js
+```
+
+Device tests cover account isolation, durable counters and retries, record pagination, expired raw records, daily/weekly aggregation, deletion/revocation, and both server entry points. Browser tests exercise connection setup, device/source history, daily/weekly views, and confirmed removal against isolated test data.
 
 ## Exercise and food guides
 

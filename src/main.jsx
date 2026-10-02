@@ -33,6 +33,8 @@ import {
   BookOpen,
   LayoutGrid,
   Rows3,
+  Smartphone,
+  HeartPulse,
 } from "lucide-react";
 import { api, localDate, dateObject, labelDate, shiftDate } from "./api";
 import PlanCards from "./PlanCards";
@@ -40,6 +42,8 @@ import GuidePage, { TaskGuides } from "./Guide";
 import StaticPages from "./StaticPages";
 import ProgressFeedback from "./ProgressFeedback";
 import McpConnections from "./McpConnections";
+import ConnectedDevices from "./ConnectedDevices";
+import DigitalWellbeing from "./DigitalWellbeing";
 import { guideRoute } from "./library";
 import { MACRO_LABELS } from "./quantities";
 import "./style.css";
@@ -68,11 +72,20 @@ const ACTIVE = ["queued", "generating", "reviewing", "revising"];
 const NAV = [
   [LayoutDashboard, "Overview"],
   [CalendarDays, "My calendar"],
+  [Smartphone, "Connected devices"],
+  [HeartPulse, "Digital wellbeing"],
 ];
-const ADMIN_PAGES = ["Users", "Static pages"];
+const ADMIN_PAGES = [
+  "Users",
+  "Static pages",
+  "Connected devices",
+  "Digital wellbeing",
+];
 const ADMIN_NAV = [
   [Users, "Users"],
   [BookOpen, "Static pages"],
+  [Smartphone, "Connected devices"],
+  [HeartPulse, "Digital wellbeing"],
 ];
 const statusKey = (date, id) => `${date}/${id}`;
 function App() {
@@ -148,6 +161,10 @@ function App() {
     [checkins, setCheckins] = useState({}),
     [media, setMedia] = useState([]),
     [notifications, setNotifications] = useState([]);
+  const [selectedDeviceId, setSelectedDeviceId] = useState(null);
+  useEffect(() => {
+    setSelectedDeviceId(null);
+  }, [account?.id]);
   const [form, setForm] = useState(DEFAULT_PROFILE),
     [step, setStep] = useState(1),
     [files, setFiles] = useState({ equipment: [], body: [] }),
@@ -806,6 +823,31 @@ function App() {
                 </button>
               </form>
             </div>
+          ) : page === "Connected devices" ? (
+            <ConnectedDevices
+              key={account.id}
+              account={account}
+              timezone={profile?.timezone || "Asia/Kolkata"}
+              selectedDeviceId={selectedDeviceId}
+              onRemoved={() => setSelectedDeviceId(null)}
+              onWellbeing={(deviceId) => {
+                setSelectedDeviceId(deviceId);
+                setPage("Digital wellbeing");
+                window.scrollTo({ top: 0 });
+              }}
+            />
+          ) : page === "Digital wellbeing" ? (
+            <DigitalWellbeing
+              key={account.id}
+              timezone={profile?.timezone || "Asia/Kolkata"}
+              selectedDeviceId={selectedDeviceId}
+              onRemoved={() => setSelectedDeviceId(null)}
+              onHistory={(deviceId) => {
+                setSelectedDeviceId(deviceId);
+                setPage("Connected devices");
+                window.scrollTo({ top: 0 });
+              }}
+            />
           ) : isAdmin && page === "Static pages" ? (
             <StaticPages />
           ) : isAdmin ? (

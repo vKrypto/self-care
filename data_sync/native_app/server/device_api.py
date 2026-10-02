@@ -2,12 +2,14 @@
 
 from datetime import date
 import hashlib
+import ipaddress
 import json
 import os
 from pathlib import Path
 import time
 from typing import Literal
 from uuid import UUID
+from urllib.parse import urlsplit
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import FileResponse
@@ -188,8 +190,31 @@ def source_view(key, value):
 @router.get("/api/devices/setup")
 def setup_device(request: Request, account=Depends(planner.current)):
     origin = str(request.base_url).rstrip("/")
+    # An explicit deployed origin avoids internal proxy host/port addresses.
+    configured = os.getenv("NATIVE_PUBLIC_URL", "").strip().rstrip("/")
+    if configured:
+        try:
+            parts = urlsplit(configured)
+            valid = (parts.scheme in ("http", "https") and parts.hostname and not parts.username and
+                     not parts.password and not parts.path and not parts.query and not parts.fragment)
+            parts.port  # Validate a configured port before giving it to phones.
+        except ValueError:
+            valid = False
+        if not valid:
+            raise HTTPException(503, "The public server URL configuration must contain only an HTTP or HTTPS origin.")
+        origin = configured
+    parts = urlsplit(origin)
+    try:
+        address = ipaddress.ip_address(parts.hostname or "")
+        private_lan = address.version == 4 and any(address in ipaddress.ip_network(network) for network in
+            ("10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"))
+    except ValueError:
+        private_lan = False
+    lan_origin = parts.scheme == "http" and private_lan
     builds = []
     for filename in sorted(APK_NAMES):
+        if ("-lan-" in filename) != lan_origin:
+            continue
         path = APK_DIRECTORY / filename
         if path.is_file() and not path.is_symlink():
             suffix = next((abi for abi in ("arm64-v8a", "armeabi-v7a", "x86_64", "x86") if filename.endswith(f"-{abi}.apk")), "universal")
@@ -198,6 +223,7 @@ def setup_device(request: Request, account=Depends(planner.current)):
                            "label": f"{'LAN preview' if lan else 'HTTPS preview'} · {suffix}",
                            "size_bytes": path.stat().st_size, "url": "/api/devices/apk/" + filename})
     return {"server_origin": origin, "current_account": {"id": account["id"], "email": account["email"]},
+            "lan_preview": lan_origin,
             "platforms": ["android"], "apks": builds,
             "steps": ["Install the Android APK matching your device architecture; use universal if unsure.",
                       "In the app, connect to this server and sign in with the same account email and password.",
@@ -298,10 +324,21 @@ def get_wellbeing(device_id: UUID | None = None, start_date: date | None = None,
     with planner.connect() as con:
         if device_id is not None:
             owned_device(con, account["id"], device_id)
-        backfill_wellbeing(con, account["id"], str(device_id) if device_id else None, limit=500)
+        processed = backfill_wellbeing(con, account["id"], str(device_id) if device_id else None, limit=500)
+        params = [account["id"]]
+        selected = ""
+        if device_id:
+            selected = " AND b.device_id=?"
+            params.append(str(device_id))
+        pending = con.execute("""SELECT COUNT(*) FROM native_batches b WHERE b.tenant=? AND b.payload IS NOT NULL"""
+                              + selected + """ AND NOT EXISTS (SELECT 1 FROM native_wellbeing_batches w
+                              WHERE w.tenant=b.tenant AND w.device_id=b.device_id AND w.batch_id=b.batch_id)""", params).fetchone()[0]
         try:
-            return read_wellbeing(con, account["id"], device_id=str(device_id) if device_id else None,
-                                  start_date=start_date.isoformat() if start_date else None,
-                                  end_date=end_date.isoformat() if end_date else None, period=period)
+            result = read_wellbeing(con, account["id"], device_id=str(device_id) if device_id else None,
+                                    start_date=start_date.isoformat() if start_date else None,
+                                    end_date=end_date.isoformat() if end_date else None, period=period)
+            result["backfill"] = {"processed_this_request": processed, "pending_batches": pending,
+                                  "complete": pending == 0}
+            return result
         except ValueError as exc:
             raise HTTPException(422, str(exc)) from None

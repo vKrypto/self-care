@@ -1,0 +1,726 @@
+.device-page {
+  max-width: 1280px;
+  margin: 0 auto;
+}
+.device-page .page-heading {
+  margin-bottom: 28px;
+}
+.device-page .heading-row {
+  gap: 20px;
+  flex-wrap: wrap;
+}
+.device-actions {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.device-actions button,
+.device-page .outline,
+.device-downloads .outline {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+.device-page button:focus-visible,
+.device-modal button:focus-visible,
+.device-page a:focus-visible {
+  outline: 2px solid #bcdfb8;
+  outline-offset: 4px;
+}
+.device-summary-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px 28px;
+  padding: 18px 0 24px;
+  color: #aab6a9;
+  font-size: 13px;
+}
+.device-summary-strip span {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+}
+.device-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(360px, 100%), 1fr));
+  gap: 20px;
+}
+.device-card,
+.device-panel {
+  background: #19201e;
+  border: 1px solid #344237;
+  border-radius: 16px;
+  padding: 26px;
+}
+.device-card {
+  text-align: left;
+  transition: border-color 0.2s;
+  width: 100%;
+}
+.device-card:hover {
+  border-color: #94ba87;
+}
+.device-card-heading,
+.device-panel-heading {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 22px;
+}
+.device-card-heading > span:nth-child(2) {
+  flex: 1;
+  min-width: 0;
+}
+.device-card-heading h2,
+.device-panel h2 {
+  font-size: 19px;
+  margin: 0;
+}
+.device-card small,
+.device-history-row small,
+.wellbeing-device-list small {
+  display: block;
+  color: #9ba997;
+  font-size: 12px;
+  margin-top: 7px;
+}
+.device-icon {
+  display: grid;
+  place-items: center;
+  width: 46px;
+  height: 46px;
+  border-radius: 12px;
+  background: #293a2c;
+  color: #bcdfb8;
+  flex-shrink: 0;
+}
+.device-facts {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 18px;
+  margin: 20px 0;
+}
+.device-facts dt {
+  font-size: 12px;
+  color: #9ba997;
+  margin-bottom: 9px;
+}
+.device-facts dd {
+  margin: 0;
+  color: #e5ebde;
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
+.device-card-foot {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  border-top: 1px solid #344237;
+  padding-top: 18px;
+  font-size: 12px;
+  color: #a5b49d;
+  flex-wrap: wrap;
+}
+.device-card-foot b {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #bcdfb8;
+}
+.device-panel {
+  margin: 22px 0;
+  min-width: 0;
+}
+.device-panel-heading h2 {
+  flex: 1;
+}
+.device-panel-heading > span {
+  color: #9ba997;
+  font-size: 12px;
+}
+.device-note {
+  color: #a5b49d;
+  font-size: 13px;
+  line-height: 1.7;
+  overflow-wrap: anywhere;
+}
+.device-note code {
+  font-size: 12px;
+}
+.device-back {
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+  color: #bcdfb8;
+  padding: 8px 0;
+  font-size: 13px;
+  margin-bottom: 12px;
+}
+.device-loading,
+.device-error {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 24px;
+  line-height: 1.6;
+}
+.device-loading {
+  color: #c5d9b7;
+  justify-content: center;
+  min-height: 110px;
+}
+.device-error {
+  background: #382320;
+  border: 1px solid #7c4a3e;
+  color: #ffd2c6;
+  border-radius: 12px;
+  margin: 18px 0;
+  flex-wrap: wrap;
+}
+.device-error span {
+  flex: 1;
+}
+.device-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: 46px 20px;
+  color: #a5b49d;
+}
+.device-empty > svg {
+  color: #bcdfb8;
+}
+.device-empty h2 {
+  color: #e5ebde;
+  margin: 18px 0 8px;
+  font-size: 23px;
+}
+.device-empty p {
+  max-width: 490px;
+  line-height: 1.7;
+}
+.device-badge {
+  background: #293a2c;
+  color: #bcdfb8 !important;
+  border-radius: 20px;
+  padding: 6px 10px;
+  font-size: 11px;
+  white-space: nowrap;
+}
+.device-badge.muted {
+  color: #c2c7ba !important;
+  background: #30352e;
+}
+.device-history-row {
+  display: flex;
+  width: 100%;
+  padding: 18px 0;
+  gap: 18px;
+  align-items: center;
+  text-align: left;
+  border-bottom: 1px solid #344237;
+}
+.device-history-row > span:nth-child(2) {
+  flex: 1;
+  min-width: 0;
+}
+.device-history-meta {
+  text-align: right;
+}
+.device-history-row b {
+  font-size: 15px;
+}
+.device-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  padding-top: 20px;
+  font-size: 12px;
+  color: #a5b49d;
+}
+.device-pagination > span {
+  margin-right: auto;
+}
+.device-source-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(255px, 100%), 1fr));
+  gap: 12px;
+}
+.device-source {
+  text-align: left;
+  border: 1px solid #384a39;
+  border-radius: 10px;
+  padding: 16px;
+  background: #1d2921;
+  position: relative;
+}
+.device-source b,
+.device-source span {
+  display: block;
+  padding-right: 18px;
+}
+.device-source b {
+  text-transform: capitalize;
+  font-size: 13px;
+}
+.device-source span {
+  font-size: 12px;
+  margin-top: 8px;
+  color: #a5b49d;
+}
+.device-source > svg {
+  position: absolute;
+  top: 16px;
+  right: 12px;
+}
+.device-source.selected {
+  border-color: #bcdfb8;
+  background: #2a3a29;
+}
+.device-json {
+  background: #101916;
+  color: #d5e5c9;
+  border-radius: 8px;
+  padding: 18px;
+  overflow: auto;
+  max-height: 440px;
+  font:
+    12px/1.7 ui-monospace,
+    monospace;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.device-record,
+.device-source-metadata {
+  border: 1px solid #344237;
+  border-radius: 8px;
+  margin: 12px 0;
+  padding: 14px;
+}
+.device-page summary {
+  cursor: pointer;
+  color: #c5d9b7;
+  font-size: 14px;
+}
+.device-modal {
+  background: #19201e;
+  color: #e7eceb;
+  border: 1px solid #486247;
+  border-radius: 18px;
+  width: min(640px, calc(100vw - 32px));
+  padding: 0;
+  max-height: calc(100dvh - 40px);
+}
+.device-modal::backdrop {
+  background: #0009;
+  backdrop-filter: blur(4px);
+}
+.device-modal-body {
+  padding: 30px;
+  position: relative;
+}
+.device-modal h2 {
+  margin: 0 32px 20px 0;
+  font-size: 25px;
+}
+.device-modal p {
+  font-size: 14px;
+  line-height: 1.7;
+  color: #aab6a9;
+}
+.device-modal-close {
+  position: absolute;
+  top: 22px;
+  right: 18px;
+}
+.device-setup-steps {
+  padding-left: 24px;
+}
+.device-setup-steps li {
+  padding: 10px 0;
+}
+.device-setup-steps li::marker {
+  color: #bcdfb8;
+}
+.device-setup-steps small {
+  color: #aab6a9;
+  display: block;
+  font-size: 12px;
+  line-height: 1.7;
+  margin-top: 10px;
+}
+.device-copy-row {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+.device-copy-row input {
+  min-width: 0;
+  width: 100%;
+  padding: 12px;
+  border: 1px solid #486247;
+  background: #101916;
+  border-radius: 7px;
+  color: #e7eceb;
+}
+.device-downloads {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 12px;
+}
+.device-downloads a {
+  font-size: 12px;
+}
+.wellbeing-toolbar {
+  display: flex;
+  gap: 22px;
+  align-items: end;
+  flex-wrap: wrap;
+  background: #19201e;
+  border: 1px solid #344237;
+  border-radius: 14px;
+  padding: 18px 22px;
+}
+.wellbeing-toolbar label {
+  display: flex;
+  gap: 8px;
+  flex-direction: column;
+  font-size: 12px;
+  color: #aab6a9;
+}
+.wellbeing-toolbar select,
+.wellbeing-toolbar input {
+  background: #101916;
+  border: 1px solid #486247;
+  color: #e7eceb;
+  border-radius: 6px;
+  padding: 11px;
+  max-width: 100%;
+  color-scheme: dark;
+}
+.wellbeing-period {
+  display: flex;
+  border: 1px solid #486247;
+  border-radius: 8px;
+  overflow: hidden;
+}
+.wellbeing-period button {
+  padding: 11px 17px;
+  color: #aab6a9;
+  font-size: 13px;
+}
+.wellbeing-period button.selected {
+  background: #bcdfb8;
+  color: #203a29;
+}
+.wellbeing-date {
+  display: flex;
+  gap: 9px;
+  align-items: end;
+  margin-left: auto;
+}
+.wellbeing-date > button {
+  height: 42px;
+  margin-bottom: 0;
+}
+.wellbeing-range {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin: 28px 0 20px;
+}
+.wellbeing-range h2 {
+  font-size: 20px;
+  margin: 0;
+}
+.wellbeing-range > span {
+  color: #aab6a9;
+  font-size: 12px;
+}
+.wellbeing-empty-note {
+  border: 1px solid #486247;
+  border-radius: 10px;
+  padding: 16px 20px;
+  margin: 20px 0;
+  display: flex;
+  gap: 12px;
+  color: #bfd1b2;
+  font-size: 13px;
+  line-height: 1.6;
+}
+.wellbeing-metrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 16px;
+}
+.wellbeing-metric {
+  border: 1px solid #344237;
+  background: #19201e;
+  border-radius: 14px;
+  padding: 23px 20px;
+}
+.wellbeing-metric > div {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  color: #aab6a9;
+  font-size: 12px;
+}
+.wellbeing-metric > strong {
+  display: block;
+  margin: 18px 0 12px;
+  font-size: 30px;
+  color: #d7ebc6;
+  font-weight: 500;
+}
+.wellbeing-metric > small {
+  display: block;
+  color: #9ba997;
+  font-size: 11px;
+  line-height: 1.6;
+}
+.wellbeing-two-columns {
+  display: grid;
+  grid-template-columns: 1.2fr 1fr;
+  gap: 22px;
+}
+.wellbeing-chart {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 7px;
+  padding-top: 14px;
+}
+.wellbeing-day {
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 7px;
+  border-radius: 8px;
+  padding: 6px 1px;
+  min-width: 0;
+}
+.wellbeing-day.selected {
+  background: #2b3c2d;
+}
+.wellbeing-day small {
+  font-size: 10px;
+  color: #aab6a9;
+}
+.wellbeing-day > span:not(.wellbeing-bar-track) {
+  font-size: 12px;
+  color: #c5d9b7;
+}
+.wellbeing-bar-track {
+  height: 150px;
+  width: 70%;
+  display: flex;
+  align-items: end;
+  background: #101916;
+  border-radius: 6px;
+  overflow: hidden;
+}
+.wellbeing-bar {
+  display: block;
+  width: 100%;
+  background: #a5c996;
+  border-radius: 5px 5px 0 0;
+}
+.wellbeing-bar.missing {
+  background: #53604e;
+}
+.wellbeing-app-list {
+  max-height: 330px;
+  overflow: auto;
+  padding-right: 5px;
+}
+.wellbeing-app {
+  margin: 18px 0;
+}
+.wellbeing-app > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 13px;
+}
+.wellbeing-app b {
+  overflow-wrap: anywhere;
+}
+.wellbeing-app strong {
+  color: #c5d9b7;
+  white-space: nowrap;
+  font-weight: 500;
+}
+.wellbeing-app small {
+  font-size: 11px;
+  color: #9ba997;
+  display: block;
+  margin-top: 6px;
+  overflow-wrap: anywhere;
+}
+.wellbeing-app-track {
+  background: #101916;
+  display: block;
+  margin-top: 9px;
+  height: 5px;
+  border-radius: 4px;
+}
+.wellbeing-app-track span {
+  display: block;
+  background: #94ba87;
+  height: 100%;
+  border-radius: 4px;
+}
+.wellbeing-health-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(180px, 100%), 1fr));
+  gap: 14px;
+}
+.wellbeing-health-status {
+  margin-top: 20px;
+}
+.wellbeing-health-status summary {
+  margin-bottom: 16px;
+}
+.wellbeing-health-item {
+  background: #101916;
+  border: 1px solid #344237;
+  border-radius: 10px;
+  padding: 17px;
+  min-width: 0;
+}
+.wellbeing-health-item > span {
+  font-size: 12px;
+  color: #aab6a9;
+}
+.wellbeing-health-item strong {
+  display: block;
+  font-size: 22px;
+  margin: 14px 0 10px;
+  font-weight: 500;
+  color: #d7ebc6;
+}
+.wellbeing-health-item small {
+  display: block;
+  font-size: 10px;
+  line-height: 1.6;
+  color: #aab6a9;
+  overflow-wrap: anywhere;
+}
+.wellbeing-health-item.unavailable strong {
+  color: #8f9b87;
+  font-size: 17px;
+}
+.wellbeing-sources {
+  max-height: 410px;
+  overflow-y: auto;
+}
+.wellbeing-sources > div {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 13px 0;
+  border-bottom: 1px solid #344237;
+  font-size: 12px;
+}
+.wellbeing-sources > div > span:first-child {
+  flex: 1;
+  text-transform: capitalize;
+}
+.wellbeing-sources small {
+  color: #aab6a9;
+}
+.wellbeing-notes li {
+  color: #aab6a9;
+  font-size: 12px;
+  line-height: 1.8;
+  margin: 8px 0;
+}
+.wellbeing-device-list > div {
+  display: flex;
+  gap: 18px;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid #344237;
+  padding: 18px 0;
+}
+@media (max-width: 1100px) {
+  .wellbeing-metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .wellbeing-two-columns {
+    grid-template-columns: 1fr;
+    gap: 0;
+  }
+  .wellbeing-date {
+    margin-left: 0;
+  }
+}
+@media (max-width: 600px) {
+  .device-panel,
+  .device-card {
+    padding: 19px 16px;
+  }
+  .device-facts {
+    grid-template-columns: 1fr;
+    gap: 14px;
+  }
+  .device-facts > div {
+    display: flex;
+    gap: 15px;
+    justify-content: space-between;
+  }
+  .device-facts dd {
+    text-align: right;
+  }
+  .device-history-row {
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+  .device-history-meta {
+    width: 100%;
+    padding-left: 58px;
+    text-align: left;
+  }
+  .device-history-row > svg {
+    display: none;
+  }
+  .wellbeing-toolbar {
+    padding: 16px;
+    gap: 16px;
+  }
+  .wellbeing-date {
+    gap: 6px;
+    max-width: 100%;
+    flex-wrap: wrap;
+  }
+  .wellbeing-metric {
+    padding: 18px 14px;
+  }
+  .wellbeing-metric > strong {
+    font-size: 23px;
+  }
+  .wellbeing-device-list > div {
+    align-items: start;
+    flex-direction: column;
+  }
+  .wellbeing-sources > div {
+    flex-wrap: wrap;
+  }
+  .device-panel-heading {
+    flex-wrap: wrap;
+  }
+  .device-modal-body {
+    padding: 25px 18px;
+  }
+  .device-copy-row {
+    flex-wrap: wrap;
+  }
+}
