@@ -130,7 +130,8 @@ upload; retries reuse it. A source's cursor advances only after the server
 acknowledges that exact batch. Denied/incomplete sources keep their own cursor.
 Source collection is paginated and bounded; overflow is reported rather than
 silently discarded. Oversized exports shrink their time window, and an
-irreducibly oversized batch pauses with an error.
+irreducibly oversized source is reported with an error while other sources
+continue. Its cursor remains intact for another attempt.
 
 Health and calendar records receive a rolling 48-hour reread, at most once per
 hour, to capture recent records that arrive late or change. Downstream consumers

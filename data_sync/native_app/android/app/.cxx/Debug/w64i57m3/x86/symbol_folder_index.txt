@@ -1,0 +1,1 @@
+/home/creator-base/github/exercise_planner/data_sync/native_app/android/app/build/intermediates/cxx/Debug/w64i57m3/obj/x86

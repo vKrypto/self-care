@@ -327,6 +327,17 @@ class SyncEngine(context: Context) {
                     store.writePending(pending)
                 }
                 val payload = pending.getJSONObject("payload")
+                // Settings can change during a long catch-up run. Check again before
+                // transmitting a previously collected export, including retry payloads.
+                val freshAccess = collector.availability(background = false)
+                val revoked = payload.getJSONObject("data").keys().asSequence()
+                    .filter { it != "source_status" }
+                    .filterNot { isComplete(freshAccess.optJSONObject(it)) }.toList()
+                if (revoked.isNotEmpty()) {
+                    store.clearPending()
+                    revoked.forEach { excludeFailedSource(it) }
+                    continue
+                }
                 try {
                     val ack = api(state).request("/api/native/batches", payload)
                     check(ack.optBoolean("accepted") && ack.optString("batch_id") == payload.getString("batch_id")) {

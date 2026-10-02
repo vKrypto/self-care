@@ -1,0 +1,49 @@
+{
+  "buildFiles": [
+    "/home/creator-base/github/exercise_planner/data_sync/native_app/node_modules/react-native-safe-area-context/android/src/main/jni/CMakeLists.txt",
+    "/home/creator-base/github/exercise_planner/data_sync/native_app/node_modules/react-native-webview/android/build/generated/source/codegen/jni/CMakeLists.txt",
+    "/home/creator-base/github/exercise_planner/data_sync/native_app/node_modules/react-native/ReactAndroid/cmake-utils/default-app-setup/CMakeLists.txt"
+  ],
+  "cleanCommandsComponents": [
+    [
+      "/tmp/forma-android-sdk/cmake/3.22.1/bin/ninja",
+      "-C",
+      "/home/creator-base/github/exercise_planner/data_sync/native_app/android/app/.cxx/Debug/w64i57m3/x86",
+      "clean"
+    ]
+  ],
+  "buildTargetsCommandComponents": [
+    "/tmp/forma-android-sdk/cmake/3.22.1/bin/ninja",
+    "-C",
+    "/home/creator-base/github/exercise_planner/data_sync/native_app/android/app/.cxx/Debug/w64i57m3/x86",
+    "{LIST_OF_TARGETS_TO_BUILD}"
+  ],
+  "libraries": {
+    "react_codegen_safeareacontext::@7984cd80db47aa7b952a": {
+      "artifactName": "react_codegen_safeareacontext",
+      "abi": "x86",
+      "output": "/home/creator-base/github/exercise_planner/data_sync/native_app/android/app/build/intermediates/cxx/Debug/w64i57m3/obj/x86/libreact_codegen_safeareacontext.so",
+      "runtimeFiles": [
+        "/tmp/forma-gradle/caches/8.14.3/transforms/cd4e90f0a158905b46cd21114b80f914/transformed/fbjni-0.7.0/prefab/modules/fbjni/libs/android.x86/libfbjni.so",
+        "/tmp/forma-gradle/caches/8.14.3/transforms/8b91260de7f10b32146fb4799f38150f/transformed/react-android-0.84.1-debug/prefab/modules/jsi/libs/android.x86/libjsi.so",
+        "/tmp/forma-gradle/caches/8.14.3/transforms/8b91260de7f10b32146fb4799f38150f/transformed/react-android-0.84.1-debug/prefab/modules/reactnative/libs/android.x86/libreactnative.so"
+      ]
+    },
+    "react_codegen_RNCWebViewSpec::@eb48929f9f7453740a6c": {
+      "artifactName": "react_codegen_RNCWebViewSpec",
+      "abi": "x86",
+      "runtimeFiles": []
+    },
+    "appmodules::@6890427a1f51a3e7e1df": {
+      "artifactName": "appmodules",
+      "abi": "x86",
+      "output": "/home/creator-base/github/exercise_planner/data_sync/native_app/android/app/build/intermediates/cxx/Debug/w64i57m3/obj/x86/libappmodules.so",
+      "runtimeFiles": [
+        "/home/creator-base/github/exercise_planner/data_sync/native_app/android/app/build/intermediates/cxx/Debug/w64i57m3/obj/x86/libreact_codegen_safeareacontext.so",
+        "/tmp/forma-gradle/caches/8.14.3/transforms/cd4e90f0a158905b46cd21114b80f914/transformed/fbjni-0.7.0/prefab/modules/fbjni/libs/android.x86/libfbjni.so",
+        "/tmp/forma-gradle/caches/8.14.3/transforms/8b91260de7f10b32146fb4799f38150f/transformed/react-android-0.84.1-debug/prefab/modules/jsi/libs/android.x86/libjsi.so",
+        "/tmp/forma-gradle/caches/8.14.3/transforms/8b91260de7f10b32146fb4799f38150f/transformed/react-android-0.84.1-debug/prefab/modules/reactnative/libs/android.x86/libreactnative.so"
+      ]
+    }
+  }
+}

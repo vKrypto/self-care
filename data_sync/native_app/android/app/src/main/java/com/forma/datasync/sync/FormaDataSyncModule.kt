@@ -101,7 +101,7 @@ class FormaDataSyncModule(private val context: ReactApplicationContext) : ReactC
         require(requested.isNotEmpty()) { "Health Connect is unavailable. Install or update Health Connect, then try again." }
         withContext(Dispatchers.Main) {
             check(healthPromise == null) { "A health permission request is already open." }
-            val activity = currentActivity ?: throw IllegalStateException("Open the app to request permissions.")
+            val activity = context.currentActivity ?: throw IllegalStateException("Open the app to request permissions.")
             val intent = HealthPermissions.permissionContract().createIntent(activity, requested)
             healthPromise = promise
             try {
@@ -117,7 +117,7 @@ class FormaDataSyncModule(private val context: ReactApplicationContext) : ReactC
 
     private fun requestRuntimeOnMain(promise: Promise, requested: Array<String>) {
         check(runtimePromise == null) { "A device permission request is already open." }
-        val activity = currentActivity as? PermissionAwareActivity
+        val activity = context.currentActivity as? PermissionAwareActivity
             ?: throw IllegalStateException("Open the app to request permissions.")
         runtimePromise = promise
         try {
@@ -141,7 +141,7 @@ class FormaDataSyncModule(private val context: ReactApplicationContext) : ReactC
     }
 
     private fun launchSettings(intent: Intent) {
-        val activity = currentActivity ?: throw IllegalStateException("Open the app to change permissions.")
+        val activity = context.currentActivity ?: throw IllegalStateException("Open the app to change permissions.")
         if (intent.resolveActivity(context.packageManager) != null) activity.startActivity(intent)
         else activity.startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
             Uri.parse("package:${context.packageName}")))
