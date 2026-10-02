@@ -1,5 +1,10 @@
 import { test, expect } from "@playwright/test";
 import { randomUUID } from "node:crypto";
+import { signUpMember, removeMember } from "./member.js";
+
+test.afterEach(async ({ page }) => {
+  await removeMember(page);
+});
 
 const selectedDate = "2026-10-01";
 const start = Date.parse(`${selectedDate}T08:00:00Z`);
@@ -12,12 +17,9 @@ const section = (records, extra = {}) => ({
 });
 
 async function syncedAccount(page) {
-  const email = `devices.${randomUUID()}@example.com`;
-  const password = "DeviceTest123!";
-  const signup = await page.request.post("/api/auth/signup", {
-    data: { name: "Device Tester", email, password },
-  });
-  expect(signup.status()).toBe(201);
+  const account = await signUpMember(page);
+  const email = account.email;
+  const password = "SampleTester123!";
   const login = await page.request.post("/api/native/login", {
     data: { email, password },
   });
@@ -92,6 +94,28 @@ async function syncedAccount(page) {
         complete: false,
         records: [],
       },
+      health_height: section([
+        {
+          _type: "HeightRecord",
+          time: { epoch_ms: start },
+          height: { meters: 1.75 },
+          metadata: {
+            id: "height-reading",
+            dataOrigin: { packageName: "com.example.health" },
+          },
+        },
+      ]),
+      health_heart_rate_variability_rmssd: section([
+        {
+          _type: "HeartRateVariabilityRmssdRecord",
+          time: { epoch_ms: start },
+          heartRateVariabilityMillis: 25.5,
+          metadata: {
+            id: "hrv-reading",
+            dataOrigin: { packageName: "com.example.health" },
+          },
+        },
+      ]),
     },
   };
   const first = await page.request.post("/api/native/batches", {
@@ -181,6 +205,18 @@ test("device history, source pagination, and daily/weekly totals use real synced
       .locator(".wellbeing-health-item")
       .filter({ hasText: "Recorded weight" }),
   ).toContainText("No data");
+  await expect(
+    page
+      .locator(".wellbeing-health-item")
+      .filter({ hasText: "Recorded height" })
+      .locator("strong"),
+  ).toHaveText("1.75 m");
+  await expect(
+    page
+      .locator(".wellbeing-health-item")
+      .filter({ hasText: "Heart rate variability" })
+      .locator("strong"),
+  ).toHaveText("25.5 ms");
   await page.getByRole("button", { name: "Weekly", exact: true }).click();
   await expect(
     page.getByRole("button", { name: "Weekly", exact: true }),

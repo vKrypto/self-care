@@ -10,7 +10,6 @@ import {
   Smartphone,
   Trash2,
 } from "lucide-react";
-import { api } from "./api";
 import { formatBytes, formatTime, sourceLabel } from "./deviceData";
 import {
   BackButton,
@@ -247,7 +246,7 @@ function DeviceDetails({ deviceId, timezone, onBack, onWellbeing, onRemoved }) {
               <span className="device-badge">Android</span>
             </div>
             <SyncFacts device={device} timezone={timezone} />
-            {device.counter_backfilled && (
+            {device.sync_count_note && (
               <p className="device-note">{device.sync_count_note}</p>
             )}
             <p className="device-note">
@@ -370,12 +369,12 @@ function BatchDetails({ deviceId, batchId, timezone, onBack }) {
     setDownloading(true);
     setDownloadError("");
     try {
-      const payload = await api(`${path}/raw`);
-      const url = URL.createObjectURL(
-        new Blob([JSON.stringify(payload, null, 2)], {
-          type: "application/json",
-        }),
-      );
+      const response = await fetch(`/api${path}/raw`, { credentials: "include" });
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({}));
+        throw new Error(error.detail || "The original export could not be downloaded. Try again.");
+      }
+      const url = URL.createObjectURL(await response.blob());
       const link = document.createElement("a");
       link.href = url;
       link.download = `forma-sync-${batchId}.json`;
@@ -443,7 +442,7 @@ function BatchDetails({ deviceId, batchId, timezone, onBack }) {
                   <dd>{formatTime(batch.received_at_ms, timezone)}</dd>
                 </div>
                 <div>
-                  <dt>Export size</dt>
+                  <dt>Retained export size</dt>
                   <dd>{formatBytes(batch.payload_bytes)}</dd>
                 </div>
               </dl>
@@ -484,7 +483,9 @@ function BatchDetails({ deviceId, batchId, timezone, onBack }) {
                         <b>{sourceLabel(item.key)}</b>
                         <span>
                           {item.record_count} records ·{" "}
-                          {item.status?.replace(/_/g, " ") || "Unknown"}
+                          {typeof item.status === "string"
+                            ? item.status.replace(/_/g, " ")
+                            : "Unknown"}
                           {item.complete === false ? " · Incomplete" : ""}
                         </span>
                         <ArrowRight size={15} />
@@ -502,7 +503,7 @@ function BatchDetails({ deviceId, batchId, timezone, onBack }) {
                 <details className="device-panel">
                   <summary>Permissions at collection</summary>
                   <pre className="device-json">
-                    {JSON.stringify(state.data.permissions, null, 2)}
+                  {state.data.permissions_json || JSON.stringify(state.data.permissions, null, 2)}
                   </pre>
                 </details>
               </>
@@ -540,7 +541,7 @@ function SourceRecords({ path, source }) {
             <details className="device-source-metadata" open>
               <summary>Source metadata and availability</summary>
               <pre className="device-json">
-                {JSON.stringify(state.data.source?.metadata || {}, null, 2)}
+              {state.data.source?.metadata_json || state.data.metadata_json || JSON.stringify(state.data.source?.metadata || {}, null, 2)}
               </pre>
             </details>
             <h3>Raw records</h3>
@@ -549,7 +550,7 @@ function SourceRecords({ path, source }) {
                 <details className="device-record" key={offset + index}>
                   <summary>Record {offset + index + 1}</summary>
                   <pre className="device-json">
-                    {JSON.stringify(record, null, 2)}
+                    {state.data.record_jsons?.[index] || JSON.stringify(record, null, 2)}
                   </pre>
                 </details>
               ))

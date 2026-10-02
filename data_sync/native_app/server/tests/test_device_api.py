@@ -190,6 +190,40 @@ def test_unknown_or_malformed_summary_fields_do_not_prevent_native_raw_collectio
     assert client.get(f"/api/devices/{device}").json()["device"]["sync_count"] == 1
 
 
+def test_source_display_json_preserves_64bit_integer_precision_and_original_types(client):
+    session = member(client)
+    device = register(client, session)
+    large = 9007199254740993
+    record = {"sensor_timestamp_nanos": large, "same_digits_text": str(large),
+              "missing": None, "fraction": 1.25, "nested": [large, str(large), None, 1.25],
+              "label": "測定"}
+    body = batch(session, device, {"activity_snapshot": {"status": "ok", "complete": True,
+        "captured_at_nanos": large, "records": [record, str(large), None, 1.25]}})
+    body["permissions"]["captured_at_nanos"] = large
+    upload(client, session, body)
+    route = prefix(device, body)
+    details = client.get(route).json()
+    assert details["permissions"]["captured_at_nanos"] == large
+    assert f'"captured_at_nanos": {large}' in details["permissions_json"]
+    descriptor = details["sources"][0]
+    assert f'"captured_at_nanos": {large}' in descriptor["metadata_json"]
+    assert json.loads(descriptor["metadata_json"]) == descriptor["metadata"]
+    first = client.get(route + "/sources/activity_snapshot?limit=2").json()
+    second = client.get(route + "/sources/activity_snapshot?limit=2&offset=2").json()
+    assert first["records"] == [record, str(large)] and second["records"] == [None, 1.25]
+    assert first["record_jsons"] == [json.dumps(record, ensure_ascii=False, indent=2), f'"{large}"']
+    assert second["record_jsons"] == ["null", "1.25"]
+    assert len(first["record_jsons"]) == len(first["records"]) == 2
+    assert f'"sensor_timestamp_nanos": {large}' in first["record_jsons"][0]
+    assert f'"same_digits_text": "{large}"' in first["record_jsons"][0]
+    assert "測定" in first["record_jsons"][0]
+    assert json.loads(first["record_jsons"][0]) == record
+    raw = client.get(route + "/raw")
+    assert raw.json() == body
+    assert f'"sensor_timestamp_nanos":{large}' in raw.text
+    assert f'"same_digits_text":"{large}"' in raw.text
+
+
 def test_raw_expiry_is_visible_without_losing_receipt_or_lifetime_counter(client):
     session = member(client)
     device = register(client, session)

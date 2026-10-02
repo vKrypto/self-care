@@ -7,6 +7,32 @@ background. **Open website** opens the current dashboard in your phone's browser
 See the [app README](native_app/README.md) for collectors, permissions, and the
 upload contract.
 
+## Review synced data on the website
+
+Phase 4 adds **Connected devices** and **Digital wellbeing** to the Forma web
+sidebar. Keep your existing Android collector installed; this update needs a web
+build and server restart, with no APK rebuild or reinstall. Sign in on the phone,
+connect it to the same server/account, accept upload consent, and tap **Sync now**.
+The app's **Open website** opens your browser, which has its own login session.
+
+**Connected devices** lists your registered devices, first/latest known sync
+dates, and successful unique sync counts. **Connect device** provides the server
+address and available APKs. Select a device to browse all retained receipts,
+source metadata, actual paginated records, and original JSON exports. Removal
+requires confirmation and deletes its server history and daily summaries while
+blocking uploads for the removed identifier; local phone records remain there.
+
+**Digital wellbeing** organizes synced metrics by day and calendar week, with a
+device filter, app usage, screen/unlock events, network totals, and available
+Health Connect measurements. Weeks include seven days. Missing or denied sources
+are labeled rather than replaced with zeros. Android buckets remain estimates;
+health values identify a selected reporting origin instead of adding overlapping
+origins. Previously retained exports are backfilled in bounded batches, and the
+page reports when more history is still being imported. Expired raw exports
+cannot be reconstructed, but newly stored daily summaries and lifetime sync
+counters have separate retention. See the [server guide](native_app/server/README.md)
+for API details, exact storage limits, and connection removal.
+
 ## Install the generated APK
 
 The generated, standalone test build is
@@ -250,10 +276,10 @@ For LAN HTTP, replace `assemblePreview` with `assembleLan`, export with
 
 ## Start the companion server
 
-Server sync needs the native companion entrypoint, which serves the existing
-API, native upload endpoints, and built web dashboard together. Local collection
-works without it. From the repository root, create the Python environment if
-needed and run:
+Both server entry points include native uploads and Phase 4 browser APIs. The
+companion serves the built dashboard and binds to all interfaces for LAN access.
+Local collection works without a server. From the repository root, create the
+Python environment if needed and run:
 
 ```bash
 python3 -m venv .venv
@@ -263,12 +289,15 @@ npm run build
 .venv/bin/python -m data_sync.native_app.server
 ```
 
-Use this entrypoint in place of `python -m backend.server`. It listens on
-`0.0.0.0:8000` by default. Put it behind HTTPS and set `COOKIE_SECURE=true` in
+Run one server process: the companion listens on `0.0.0.0:8000` by default;
+`python -m backend.server` includes the same APIs and defaults to loopback.
+Put it behind HTTPS and set `COOKIE_SECURE=true` in
 the repository `.env` for the preview APK. Create a member account through the
 existing Forma web dashboard before signing in on the phone. The server origin
 must be reachable from the phone; `localhost` there refers to the phone itself.
 See the [server README](native_app/server/README.md) for configuration details.
+Set `NATIVE_PUBLIC_URL=https://forma.example.com` when connection instructions
+should advertise a specific public origin behind a reverse proxy.
 
 For a phone on the same LAN, use the **LAN preview APK** and enter
 `http://<computer-LAN-IP>:8000`. Keep the server running and allow inbound port

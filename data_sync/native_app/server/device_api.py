@@ -171,6 +171,11 @@ def retained_payload(row):
     return json.loads(row["payload"])
 
 
+def display_json(value):
+    """Serialize before browser JSON parsing can round Android 64-bit integers."""
+    return json.dumps(value, ensure_ascii=False, indent=2, allow_nan=False)
+
+
 def source_view(key, value):
     if isinstance(value, dict):
         records = value.get("records", [])
@@ -184,7 +189,8 @@ def source_view(key, value):
     else:
         records, metadata, status, complete = [], {"value": value}, None, None
     return {"key": key, "status": status, "complete": complete,
-            "record_count": len(records), "metadata": metadata}, records
+            "record_count": len(records), "metadata": metadata,
+            "metadata_json": display_json(metadata)}, records
 
 
 @router.get("/api/devices/setup")
@@ -278,10 +284,12 @@ def get_batch(device_id: UUID, batch_id: UUID, account=Depends(planner.current))
         row = owned_receipt(con, account["id"], device_id, batch_id, raw=True)
     receipt = receipt_view(row)
     if not receipt["raw_retained"]:
-        return {"batch": receipt, "raw_retained": False, "permissions": None, "sources": [],
+        return {"batch": receipt, "raw_retained": False, "permissions": None, "permissions_json": None, "sources": [],
                 "note": "Raw records expired under the raw-data retention or storage policy. Daily summaries and this receipt remain available."}
     payload = retained_payload(row)
-    return {"batch": receipt, "raw_retained": True, "permissions": payload.get("permissions", {}),
+    permissions = payload.get("permissions", {})
+    return {"batch": receipt, "raw_retained": True, "permissions": permissions,
+            "permissions_json": display_json(permissions),
             "sources": [source_view(key, value)[0] for key, value in sorted(payload.get("data", {}).items())]}
 
 
@@ -303,7 +311,8 @@ def get_source(device_id: UUID, batch_id: UUID, source_key: str, limit: int = Qu
     source, records = source_view(source_key, data[source_key])
     page = records[offset:offset + limit]
     has_more = offset + len(page) < len(records)
-    return {"source": source, "records": page, "total": len(records), "limit": limit, "offset": offset,
+    return {"source": source, "records": page, "record_jsons": [display_json(record) for record in page],
+            "total": len(records), "limit": limit, "offset": offset,
             "has_more": has_more, "next_offset": offset + len(page) if has_more else None}
 
 

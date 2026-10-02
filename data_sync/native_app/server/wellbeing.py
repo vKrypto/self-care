@@ -21,6 +21,7 @@ MAX_QUERY_DAYS = 93
 MAX_FACTS_PER_DEVICE = 100_000
 MAX_FACT_BYTES_PER_DEVICE = 64 * 1024 * 1024
 MAX_OBSERVATIONS_PER_DEVICE = 60_000
+MAX_BATCH_MARKERS_PER_DEVICE = 60_000
 MAX_BATCH_RECORDS = 100_000
 MAX_BACKFILL_BYTES_PER_REQUEST = 16 * 1024 * 1024
 
@@ -121,6 +122,7 @@ for _field in ("energy", "energyFromFat", "biotin", "caffeine", "calcium", "chlo
     HEALTH["NutritionRecord"].append((_key, _field, _unit, "reported_sum"))
 HEALTH_SOURCES = {metric: "health_" + "".join(("_" + c.lower()) if c.isupper() else c for c in record.removesuffix("Record")).lstrip("_")
                   for record, fields in HEALTH.items() for metric, *_ in fields}
+RECORD_SOURCES = {record: HEALTH_SOURCES[fields[0][0]] for record, fields in HEALTH.items()}
 CUMULATIVE_METRICS = {metric for fields in HEALTH.values() for metric, _, _, mode in fields
                       if mode in ("cumulative", "duration", "reported_sum")}
 NOTES = [
@@ -133,6 +135,7 @@ NOTES = [
     "All-device health values select one device per metric; duplicate wearable records across phones are not added.",
     "Summaries use retained facts for up to 365 days, 100,000 facts and 64 MiB per device; large histories can be incomplete.",
     "Source record counts describe the most recent read for each day; weekly source counts are daily observations, not unique raw records.",
+    "When compact facts roll off their limit, existing daily observations are kept; those historical summaries can no longer be fully recalculated.",
 ]
 
 
@@ -168,12 +171,23 @@ def init_wellbeing_db(con):
             tenant TEXT NOT NULL,device_id TEXT NOT NULL,zone TEXT NOT NULL,collected_at_ms INTEGER NOT NULL,
             PRIMARY KEY(tenant,device_id),
             FOREIGN KEY(tenant,device_id) REFERENCES native_devices(tenant,device_id) ON DELETE CASCADE)""",
+        """CREATE TABLE IF NOT EXISTS native_wellbeing_pruned_sources (
+            tenant TEXT NOT NULL,device_id TEXT NOT NULL,source TEXT NOT NULL,
+            first_ms INTEGER NOT NULL,last_ms INTEGER NOT NULL,
+            PRIMARY KEY(tenant,device_id,source),
+            FOREIGN KEY(tenant,device_id) REFERENCES native_devices(tenant,device_id) ON DELETE CASCADE)""",
     ):
         con.execute(sql)
 
 
 def _json(value):
     return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False, allow_nan=False)
+
+
+def _precision(value):
+    # Keep trace micronutrients (grams can be millionths) while suppressing
+    # arithmetic noise introduced by interval allocation and weighted means.
+    return value if isinstance(value, int) else float(format(value, ".12g"))
 
 
 def _number(value):
@@ -242,9 +256,20 @@ def _date_at(stamp, zone):
     return datetime.fromtimestamp(stamp / 1000, ZoneInfo(zone)).date().isoformat()
 
 
+def _touch_dates(touched, start, end, zone):
+    first = date.fromisoformat(_date_at(start, zone))
+    last = date.fromisoformat(_date_at(max(start, end - 1), zone))
+    # Native upload windows are already bounded; clamp a malformed health
+    # record's wider interval to the derived retention horizon as well.
+    first = max(first, last - timedelta(days=RETENTION_DAYS))
+    while first <= last:
+        touched.add(first.isoformat())
+        first += timedelta(days=1)
+
+
 def _health_fact(source, record, collected):
     kind = record.get("_type")
-    if not isinstance(kind, str) or kind not in HEALTH:
+    if not isinstance(kind, str) or kind not in HEALTH or source != RECORD_SOURCES[kind]:
         return None
     metadata = record.get("metadata") if isinstance(record.get("metadata"), dict) else {}
     origin_data = metadata.get("dataOrigin")
@@ -384,7 +409,7 @@ def derive_batch(con, tenant, device_id, batch_id, payload, received_at_ms):
         status = status if status in ("ok", "denied", "background_denied", "unavailable", "error") else "unavailable"
         observations.append((tenant, device_id, batch_id, source, source_start, source_end, collected,
                              status, int(section.get("complete") is True), len(records)))
-        touched.update((_date_at(source_start, zone), _date_at(source_end - 1, zone)))
+        _touch_dates(touched, source_start, source_end, zone)
         if status != "ok":
             continue
         for record in records:
@@ -400,7 +425,13 @@ def derive_batch(con, tenant, device_id, batch_id, payload, received_at_ms):
             if source == "usage_events" and not (source_start <= fact_start < source_end):
                 continue
             facts.append((tenant, device_id, source, key, fact_start, fact_end, collected, revision, _json(compact)))
-            touched.update((_date_at(max(cutoff, fact_start), zone), _date_at(fact_end, zone)))
+            _touch_dates(touched, max(cutoff, fact_start), max(fact_end, fact_start + 1), zone)
+            if compact.get("kind") == "health":
+                previous = con.execute("""SELECT start_ms,end_ms FROM native_wellbeing_facts
+                    WHERE tenant=? AND device_id=? AND source=? AND record_key=?""",
+                    (tenant, device_id, source, key)).fetchone()
+                if previous:
+                    _touch_dates(touched, max(cutoff, previous["start_ms"]), max(previous["end_ms"], previous["start_ms"] + 1), zone)
     con.executemany("""INSERT INTO native_wellbeing_facts VALUES(?,?,?,?,?,?,?,?,?)
         ON CONFLICT(tenant,device_id,source,record_key) DO UPDATE SET start_ms=excluded.start_ms,end_ms=excluded.end_ms,
         collected_at_ms=excluded.collected_at_ms,revision_ms=excluded.revision_ms,payload=excluded.payload
@@ -408,8 +439,16 @@ def derive_batch(con, tenant, device_id, batch_id, payload, received_at_ms):
         (excluded.revision_ms=native_wellbeing_facts.revision_ms AND excluded.collected_at_ms>=native_wellbeing_facts.collected_at_ms)""", facts)
     con.executemany("INSERT OR IGNORE INTO native_wellbeing_observations VALUES(?,?,?,?,?,?,?,?,?,?)", observations)
     con.execute("INSERT INTO native_wellbeing_batches VALUES(?,?,?,?)", (tenant, device_id, batch_id, received_at_ms))
-    # Any changed event can close a session in an already cached adjacent day.
-    con.execute("UPDATE native_wellbeing_days SET dirty=1 WHERE tenant=? AND device_id=?", (tenant, device_id))
+    # A changed event can close a session in a cached adjacent day. Avoid
+    # invalidating unrelated older summaries: their compact event facts may
+    # already have rolled off the bounded fact store, while the daily totals
+    # are intentionally retained for the full derived history period.
+    invalidated = set(touched)
+    for selected in touched:
+        current_date = date.fromisoformat(selected)
+        invalidated.update(((current_date - timedelta(days=1)).isoformat(), (current_date + timedelta(days=1)).isoformat()))
+    con.executemany("UPDATE native_wellbeing_days SET dirty=1 WHERE tenant=? AND device_id=? AND date=?",
+                    [(tenant, device_id, selected) for selected in invalidated])
     for selected in touched:
         if selected < _date_at(cutoff, zone):
             continue
@@ -433,19 +472,34 @@ def prune_wellbeing(con, tenant, device_id, now_ms):
     con.execute("DELETE FROM native_wellbeing_days WHERE tenant=? AND device_id=? AND date<?",
                 (tenant, device_id, _date_at(max(0, cutoff), account_zone(con, tenant, device_id))))
     for table, maximum, order in (("native_wellbeing_facts", MAX_FACTS_PER_DEVICE, "end_ms DESC"),
-                                 ("native_wellbeing_observations", MAX_OBSERVATIONS_PER_DEVICE, "end_ms DESC,collected_at_ms DESC")):
+                                 ("native_wellbeing_observations", MAX_OBSERVATIONS_PER_DEVICE, "end_ms DESC,collected_at_ms DESC"),
+                                 ("native_wellbeing_batches", MAX_BATCH_MARKERS_PER_DEVICE, "received_at_ms DESC")):
+        if table == "native_wellbeing_facts":
+            removed = con.execute(f"SELECT source,MIN(start_ms) AS first_ms,MAX(end_ms) AS last_ms FROM {table} "
+                                  f"WHERE tenant=? AND device_id=? AND rowid NOT IN "
+                                  f"(SELECT rowid FROM {table} WHERE tenant=? AND device_id=? ORDER BY {order},rowid DESC LIMIT ?) GROUP BY source",
+                                  (tenant, device_id, tenant, device_id, maximum)).fetchall()
+            _remember_pruned_sources(con, tenant, device_id, removed)
         con.execute(f"DELETE FROM {table} WHERE tenant=? AND device_id=? AND rowid NOT IN "
                     f"(SELECT rowid FROM {table} WHERE tenant=? AND device_id=? ORDER BY {order},rowid DESC LIMIT ?)",
                     (tenant, device_id, tenant, device_id, maximum))
-    total = con.execute("SELECT COALESCE(SUM(length(payload)),0) FROM native_wellbeing_facts WHERE tenant=? AND device_id=?",
+    total = con.execute("SELECT COALESCE(SUM(length(CAST(payload AS BLOB))),0) FROM native_wellbeing_facts WHERE tenant=? AND device_id=?",
                         (tenant, device_id)).fetchone()[0]
     if total > MAX_FACT_BYTES_PER_DEVICE:
-        for row in con.execute("SELECT rowid,length(payload) AS size FROM native_wellbeing_facts WHERE tenant=? AND device_id=? ORDER BY end_ms,rowid",
+        for row in con.execute("SELECT rowid,length(CAST(payload AS BLOB)) AS size,source,start_ms AS first_ms,end_ms AS last_ms FROM native_wellbeing_facts WHERE tenant=? AND device_id=? ORDER BY end_ms,rowid",
                                (tenant, device_id)).fetchall():
+            _remember_pruned_sources(con, tenant, device_id, [row])
             con.execute("DELETE FROM native_wellbeing_facts WHERE rowid=?", (row["rowid"],))
             total -= row["size"]
             if total <= MAX_FACT_BYTES_PER_DEVICE:
                 break
+
+
+def _remember_pruned_sources(con, tenant, device_id, rows):
+    con.executemany("""INSERT INTO native_wellbeing_pruned_sources VALUES(?,?,?,?,?)
+        ON CONFLICT(tenant,device_id,source) DO UPDATE SET first_ms=MIN(first_ms,excluded.first_ms),
+        last_ms=MAX(last_ms,excluded.last_ms)""",
+        [(tenant, device_id, row["source"], row["first_ms"], row["last_ms"]) for row in rows])
 
 
 def backfill_wellbeing(con, tenant, device_id=None, limit=500):
@@ -538,7 +592,7 @@ def _allocated_sum(rows, day_start, day_end, field):
         else:
             active.discard(index)
         previous = stamp
-    return round(total, 4)
+    return _precision(total)
 
 
 def _source_status(observations, source, has_records=False):
@@ -726,7 +780,7 @@ def _device_day(con, tenant, device_id, selected, zone):
         chosen = max(origin_summaries, key=lambda origin: (len(origin_summaries[origin][1]), origin))
         value, entries = origin_summaries[chosen]
         instantaneous = entries[0]["mode"] == "instant"
-        metrics[key] = _metric(key, round(value, 4), "available", "reported_origin_records", origin=chosen,
+        metrics[key] = _metric(key, _precision(value), "available", "reported_origin_records", origin=chosen,
                                origin_count=len(origins), samples=len(entries),
                                min=min(r["value"] for r in entries) if instantaneous else None,
                                max=max(r["value"] for r in entries) if instantaneous else None)
@@ -736,6 +790,25 @@ def _device_day(con, tenant, device_id, selected, zone):
         sources.append({"source": source, "status": "available" if latest["status"] == "ok" and latest["record_count"] else
                         "no_data" if latest["status"] == "ok" else latest["status"],
                         "record_count": latest["record_count"], "complete": bool(latest["complete"])})
+    if cached and cached["zone"] == zone and cached["payload"]:
+        prior = json.loads(cached["payload"])
+        pruned = {row["source"] for row in con.execute("""SELECT source FROM native_wellbeing_pruned_sources
+            WHERE tenant=? AND device_id=? AND first_ms<? AND last_ms>=?""", (tenant, device_id, end, start - DAY_MS))}
+        source_by_metric = {**HEALTH_SOURCES, "foreground": "usage_events", "screen": "usage_events", "unlocks": "usage_events",
+                            "wifi_rx": "network_usage_wifi", "wifi_tx": "network_usage_wifi",
+                            "mobile_rx": "network_usage_mobile", "mobile_tx": "network_usage_mobile"}
+        for old in prior["metrics"]:
+            key = old["key"]
+            source = source_by_metric.get(key)
+            if old["method"] == "android_bucket_estimate" and key == "foreground":
+                source = "usage_stats"
+            elif old["method"] == "android_bucket_estimate" and key in ("screen", "unlocks"):
+                source = "usage_event_stats"
+            if old["value"] is not None and source in pruned:
+                metrics[key] = {**old, "retained_daily_summary": True}
+        if "usage_events" in pruned or "usage_stats" in pruned:
+            app_list = prior["usage"]["apps"]
+            usage_method = prior["usage"]["method"]
     result = _assemble(selected, list(metrics.values()), app_list, sources, int(bool(daily_obs)), updated, usage_method)
     if daily_obs or cached:
         con.execute("""INSERT INTO native_wellbeing_days VALUES(?,?,?,?,0,?,?)
@@ -770,9 +843,14 @@ def _combine_days(selected, entries, across_devices=False):
         else:
             samples = sum(value["samples"] for value in available)
             total = sum(value["value"] for value in available)
-        metrics.append({**chosen, "value": round(total, 4), "samples": samples,
+        metrics.append({**chosen, "value": _precision(total), "samples": samples,
                         "min": min((v["min"] for v in available if v["min"] is not None), default=None),
                         "max": max((v["max"] for v in available if v["max"] is not None), default=None)})
+        if any(value.get("retained_daily_summary") for value in available):
+            metrics[-1]["retained_daily_summary"] = True
+        origins = sorted({v["origin"] for v in available if v["origin"]})
+        if key in HEALTH_SOURCES and not across_devices and len(origins) > 1:
+            metrics[-1].update(method="reported_daily_origins", origin=None, origin_count=len(origins), origins=origins)
     packages = defaultdict(lambda: {"foreground_ms": 0, "launches": None})
     for entry in entries:
         for app in entry["usage"]["apps"]:

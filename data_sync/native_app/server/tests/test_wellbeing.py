@@ -358,3 +358,60 @@ def test_backfill_byte_budget_returns_progress_then_completes(con, monkeypatch):
     assert w.backfill_wellbeing(con, "member") == 1
     assert w.backfill_wellbeing(con, "member") == 0
     assert day(con)["usage"]["unlocks"] == 1
+
+
+def test_pruned_facts_do_not_erase_unrelated_materialized_historical_day(con, monkeypatch):
+    ingest(con, payload({"usage_events": section([event("2026-09-30T12:00:00Z", 1), event("2026-09-30T12:30:00Z", 2)])}))
+    assert day(con)["usage"]["foreground_ms"] == 1_800_000
+    monkeypatch.setattr(w, "MAX_FACTS_PER_DEVICE", 2)
+    ingest(con, payload({"usage_events": section([event("2026-10-03T12:00:00Z", 1), event("2026-10-03T12:10:00Z", 2)])},
+                        start="2026-10-03T00:00:00Z", end="2026-10-04T00:00:00Z"))
+    assert con.execute("SELECT MIN(start_ms) FROM native_wellbeing_facts").fetchone()[0] == ms("2026-10-03T12:00:00Z")
+    assert day(con)["usage"]["foreground_ms"] == 1_800_000
+    assert day(con, "2026-10-03")["usage"]["foreground_ms"] == 600_000
+
+
+def test_weekly_mixed_health_origins_are_reported_as_daily_origins(con):
+    ingest(con, payload({"health_steps": section([health("StepsRecord", "2026-09-30T12:00:00Z", "2026-09-30T13:00:00Z", origin="com.phone", count=1000)])}))
+    ingest(con, payload({"health_steps": section([health("StepsRecord", "2026-10-01T12:00:00Z", "2026-10-01T13:00:00Z", origin="com.watch", count=2000)])},
+                        start="2026-10-01T00:00:00Z", end="2026-10-02T00:00:00Z"))
+    result = w.read_wellbeing(con, "member", "phone", "2026-09-30", "2026-10-01", "weekly")
+    steps = result["weeks"][0]["health"]["steps"]
+    assert steps["value"] == 3000
+    assert steps["origin"] is None
+    assert steps["method"] == "reported_daily_origins"
+    assert steps["origins"] == ["com.phone", "com.watch"]
+
+
+def test_targeted_refresh_after_fact_pruning_keeps_original_daily_observations(con, monkeypatch):
+    ingest(con, payload({"usage_events": section([event("2026-09-30T12:00:00Z", 1), event("2026-09-30T12:30:00Z", 2)])}))
+    assert day(con)["usage"]["foreground_ms"] == 1_800_000
+    monkeypatch.setattr(w, "MAX_FACTS_PER_DEVICE", 2)
+    ingest(con, payload({"usage_events": section([event("2026-10-01T12:00:00Z", 1), event("2026-10-01T12:10:00Z", 2)])},
+                        start="2026-10-01T00:00:00Z", end="2026-10-02T00:00:00Z"))
+    result = day(con)
+    assert result["usage"]["foreground_ms"] == 1_800_000
+    assert next(m for m in result["metrics"] if m["key"] == "foreground")["retained_daily_summary"]
+    con.execute("DELETE FROM native_devices WHERE device_id='phone'")
+    assert con.execute("SELECT COUNT(*) FROM native_wellbeing_pruned_sources").fetchone()[0] == 0
+
+
+def test_trace_micronutrient_precision_survives_daily_and_weekly_aggregation(con):
+    ingest(con, payload({"health_nutrition": section([health("NutritionRecord", "2026-09-30T12:00:00Z", "2026-09-30T12:30:00Z",
+        vitaminD={"grams": 0.00001}, vitaminB12={"grams": 0.0000024})])}))
+    daily = day(con)["health"]
+    assert daily["nutrition_vitamin_d"]["value"] == 0.00001
+    assert daily["nutrition_vitamin_b12"]["value"] == 0.0000024
+    weekly = w.read_wellbeing(con, "member", "phone", "2026-09-30", "2026-09-30", "weekly")["weeks"][0]["health"]
+    assert weekly["nutrition_vitamin_d"]["value"] == 0.00001
+    assert weekly["nutrition_vitamin_b12"]["value"] == 0.0000024
+
+
+def test_health_record_update_replaces_source_id_and_stale_exports_cannot_overwrite(con):
+    original = health("StepsRecord", "2026-09-30T12:00:00Z", "2026-09-30T13:00:00Z", count=1000)
+    revised = {**original, "count": 700, "metadata": {**original["metadata"], "lastModifiedTime": {"epoch_ms": ms("2026-09-30T14:00:00Z")}}}
+    ingest(con, payload({"health_steps": section([original])}, end="2026-09-30T13:00:00Z"))
+    ingest(con, payload({"health_steps": section([revised])}, end="2026-09-30T14:00:00Z"))
+    ingest(con, payload({"health_steps": section([original])}, end="2026-09-30T15:00:00Z"))
+    assert con.execute("SELECT COUNT(*) FROM native_wellbeing_facts").fetchone()[0] == 1
+    assert day(con)["health"]["steps"]["value"] == 700

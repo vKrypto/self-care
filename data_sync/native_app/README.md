@@ -1,9 +1,10 @@
 # Forma Android Data Connect
 
-Phase 3 lives entirely in this folder. It contains an Android React Native app,
+The Phase 3 collector lives in this folder. It contains an Android React Native app,
 shared TypeScript screens, Kotlin collectors and persistent collection/upload workers, and a
-companion entry point for the existing Forma server. Existing web and backend
-source files do not need modification. iOS is deferred.
+companion entry point for the existing Forma server. Phase 4 adds account-owned
+device history and Digital wellbeing to the web dashboard, using the collector's
+existing export contract. iOS is deferred.
 
 For tool installation, platform-specific build commands, and APK installation,
 see the [Android APK build guide](../README.md). The generated standalone test
@@ -24,12 +25,17 @@ npm run build
 .venv/bin/python -m data_sync.native_app.server
 ```
 
-This serves the existing API, `/api/native/*`, and the built dashboard at one
-origin, by default `http://0.0.0.0:8000`. Use existing Forma accounts. The usual
+This serves the existing API, `/api/native/*`, `/api/devices*`, `/api/wellbeing`,
+and the built dashboard. It listens on `0.0.0.0:8000` by default; use a reachable
+LAN address or HTTPS hostname on the phone. Use existing Forma accounts. The usual
 `FORMA_DATA_DIR`, `ADMIN_EMAIL`, and other backend environment settings still
 apply. Set `NATIVE_PORT` / `NATIVE_HOST` to change the listener; set
 `NATIVE_FRONTEND_DIST` for a different built frontend directory. Build the web
 dashboard before starting the companion process so its assets are mounted.
+The regular `.venv/bin/python -m backend.server` entry point installs the same
+native/browser APIs, with its existing loopback listener. Run one server process.
+For a reverse proxy, `NATIVE_PUBLIC_URL` can set the origin shown by **Connect
+device**; see the [server guide](server/README.md).
 
 In production, expose this server over HTTPS and set `COOKIE_SECURE=true`.
 The app accepts HTTP in debug builds and the explicit LAN test variant. A phone needs your server's reachable
@@ -214,6 +220,33 @@ from the local queue before this history feature was installed cannot be
 reconstructed on the device. All new collections are tracked. Signing out
 preserves device history; clearing app storage or uninstalling deletes it.
 
+## Phase 4: Review synced records on the website
+
+Keep the existing collector installed; Phase 4 needs a web build/server restart,
+with no APK rebuild or reinstall. Sign in on the phone with the same Forma
+account/server, accept upload consent, and use **Sync now**. **Open website**
+opens the browser, where you sign in independently of the native upload session.
+
+The web **Connected devices** tab lists account devices, first/latest known
+sync dates, and unique successful sync counts. **Connect device** provides the
+server address, account email, compatible APK downloads and setup instructions.
+Select a device to review all retained receipts, every exported source and its
+original metadata, paginated records, and full JSON downloads. Confirmed removal
+deletes its server history and derived daily records and prevents uploads for
+that device identifier. Local phone records remain under local storage controls.
+
+**Digital wellbeing** organizes synced metrics into daily and seven-day calendar
+week views, for one device or the account's devices. It includes observed app
+foreground/screen time and unlocks, network estimates, and supported Health
+Connect measurements. Missing or denied sources retain their status, and
+overlapping exports are deduplicated. Health metrics describe a selected
+reporting origin instead of summing overlapping phone/wearable origins or
+claiming Health Connect priority totals. Other retained sources remain fully
+inspectable in device history. Device counters and daily summaries have their
+own retention; earlier raw records that already expired cannot be backfilled.
+See the [server README](server/README.md#storage-retention-and-removal) for limits,
+backfill progress, browser APIs, and revocation behavior.
+
 ## Sources and permissions
 
 | Source | Exported information | Required access / limits |
@@ -339,7 +372,12 @@ Expired sessions stop uploads and require another login; local collection contin
 Native records live in `native_devices` and `native_batches` in the existing
 Forma SQLite database. Raw batches are retained for up to 90 days / 256 MiB per
 user; receipts for up to 365 days / 50,000 batches per user. Pruning runs on
-ingestion. Existing account deletion cascades to these rows. Grant revocation
+ingestion. Durable device counters and retry hashes survive receipt pruning;
+legacy counters are backfilled from retained receipts and disclose unrecoverable
+older history. Derived wellbeing facts have separate bounded 365-day retention.
+The web **Remove device** action deletes its server history, including derived
+records, and blocks uploads for the old identifier. Existing account deletion
+cascades through these rows and removes revocation tombstones. Grant revocation
 blocks affected future reads and queued uploads. Signing out stops uploads and
 removes the local session while collection and queued records remain. Neither
 deletes exports already stored on the server. Server-side disk encryption and
@@ -411,8 +449,9 @@ session, pause collection separately from uploads, sign out and verify continued
 local collection, and switch accounts without uploading another account's queue.
 Check that acknowledged receipts appear at
 `/api/native/status` and that **Open website** launches the configured server
-in a browser. There
-is no iOS build or native chart/dashboard implementation in this phase.
+in a browser. Phase 4 web charts and record views consume those same exports;
+the collector continues to use its native collection/history screens and external
+browser link. iOS is deferred.
 
 Implementation references: [React Native environment setup](https://reactnative.dev/docs/set-up-your-environment),
 [UsageStatsManager](https://developer.android.com/reference/android/app/usage/UsageStatsManager),

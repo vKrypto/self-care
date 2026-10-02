@@ -1,10 +1,10 @@
-# Android ingestion server
+# Android ingestion and connected-device server
 
-This optional ASGI entrypoint extends the existing Forma API without editing its
-backend. It uses the existing accounts, salted password hashes and hashed
-30-day sessions, and adds tenant-owned `native_devices` and `native_batches`
-tables to the same SQLite database. Existing account deletion also deletes its
-device registrations and exports.
+Both Forma server entry points install Android ingestion, connected-device
+history, and Digital wellbeing APIs. They use the existing accounts, salted
+password hashes and hashed 30-day sessions. Device registrations, exports,
+durable sync counters/retry hashes, and derived daily records live in the same
+SQLite database. Existing account deletion also deletes its device data.
 
 From the repository root:
 
@@ -14,13 +14,24 @@ npm run build
 .venv/bin/python -m data_sync.native_app.server
 ```
 
-Run this entrypoint **instead of** `python -m backend.server`. It provides the
-existing API, MCP transport and built dashboard on one origin, plus the native
-routes below. The default bind address is `0.0.0.0:8000`; use `NATIVE_HOST` and
+Run one server process. The companion provides the existing API, MCP transport,
+built dashboard, and device routes on one origin. Its default bind address is
+`0.0.0.0:8000`; use `NATIVE_HOST` and
 `NATIVE_PORT` to override it. `NATIVE_FRONTEND_DIST` can point at another built
 dashboard directory. The underlying backend still reads the repository `.env`
 and honors `FORMA_DATA_DIR`, `ADMIN_EMAIL`, `ADMIN_PASSWORD`, `COOKIE_SECURE`,
 and the other existing configuration.
+
+`.venv/bin/python -m backend.server` installs the same native/browser routes and
+database initialization, with its existing loopback listener. The extension is
+installed once regardless of which entry point imports it. Build the frontend
+before starting either process so its assets can be mounted.
+
+For a reverse proxy, set `NATIVE_PUBLIC_URL=https://forma.example.com` to control
+the origin advertised by **Connect device**. It must contain only an HTTP/HTTPS
+origin, without a path, query, fragment, or embedded credentials. Without this
+override, setup uses the current request origin. `NATIVE_APK_DIR` optionally
+points at a directory of generated APKs; its default is `data_sync/apk`.
 
 Use an HTTPS origin and `COOKIE_SECURE=true` for a deployed server. A phone can
 reach a development server using the computer's LAN address; the Android
@@ -93,10 +104,13 @@ Android's actual history availability or granted permissions.
   "collected_at_ms": 1790899200000,
   "permissions": {"usage_access": true},
   "data": {
-    "usage": {
-      "status": "available",
+    "usage_events": {
+      "status": "ok",
       "complete": true,
-      "records": [{"package_name": "example.app", "foreground_ms": 120000}]
+      "records": [
+        {"timestamp_ms": 1790895600000, "event_type": 1, "package_name": "example.app"},
+        {"timestamp_ms": 1790895720000, "event_type": 2, "package_name": "example.app"}
+      ]
     }
   }
 }
@@ -119,30 +133,120 @@ field order and insignificant JSON whitespace do not affect duplicate detection.
 Expired, logged-out or password-reset sessions return 401. Cross-user batch
 identities return 403; unowned/unregistered devices return 404.
 
-## Storage and verification
+## Browser APIs: Connected devices and Digital wellbeing
+
+These routes authenticate the existing HttpOnly `forma_session` browser cookie,
+scope every device/receipt/source query to that account, and return
+`Cache-Control: no-store` on data and error responses. A native bearer header alone does not
+authenticate them. Foreign-account device IDs return 404. Administrators can
+view only devices registered to their own account through these views. The
+current collector's external browser has an independent sign-in session; no
+native credential is attached to **Open website**.
+
+| Route | Response / parameters |
+| --- | --- |
+| `GET /api/devices` | `{devices,retention}`; name, platform, registration/update dates, first/latest known sync dates, lifetime `sync_count`, retained receipt/raw counts, and counter-backfill notes |
+| `GET /api/devices/setup` | `{server_origin,current_account,platforms,apks,steps,notes,lan_preview}`; APK entries include `filename`, `label`, `abi`, `size_bytes`, and relative `url` |
+| `GET /api/devices/apk/{filename}` | Authenticated APK download; only known generated filenames, no symlinks or arbitrary filesystem paths |
+| `GET /api/devices/{device_id}` | `{device,retention}` for one owned device |
+| `GET /api/devices/{device_id}/batches?limit=25&offset=0` | `{batches,total,limit,offset,has_more,next_offset}`; receipt metadata without full raw payloads; limit 1–100 |
+| `GET /api/devices/{device_id}/batches/{batch_id}` | `{batch,raw_retained,permissions,sources}`; each source has key, status, completeness, record count, and original metadata |
+| `GET /api/devices/{device_id}/batches/{batch_id}/sources/{source_key}?limit=100&offset=0` | `{source,records,total,limit,offset,has_more,next_offset}`; limit 1–500; preserves unknown sources and nested record fields |
+| `GET /api/devices/{device_id}/batches/{batch_id}/raw` | Original accepted JSON envelope; 410 when raw records expired |
+| `DELETE /api/devices/{device_id}` | `{deleted:true,device_id}`; removes server device history and derived records, and revokes that account's old device identifier |
+| `GET /api/wellbeing` | Daily/weekly metrics, source statuses, device list, timezone, notes, retention, and backfill progress; optional `device_id`, `period=daily\|weekly`, `start_date`, `end_date` |
+
+Browser **Connect device** selects LAN preview downloads only for HTTP origins
+using literal RFC1918 private IPv4 addresses. Other origins list regular HTTPS
+preview builds. Generated APKs are authenticated downloads, including LAN builds
+with their editable development defaults. No account password is returned by
+setup. Install an architecture-specific APK or universal fallback as described
+in the [APK guide](../../README.md#choose-a-smaller-apk).
+
+Wellbeing dates use `YYYY-MM-DD`; ranges are inclusive, bounded to 1–93 days,
+and default to the latest 14 days. The profile timezone takes priority, followed
+by a reported device timezone and UTC. Weekly results contain full Monday–Sunday
+weeks with seven daily entries, including missing days. Accepted uploads derive
+their dated metrics in the same transaction as the receipt. Previously retained
+raw exports are backfilled once, processing at most 500 receipts / 16 MiB per
+request; `{backfill:{processed_this_request,pending_batches,complete}}` lets the
+page report progress and refresh until the import finishes.
+
+Observed app transitions, screen/unlock events, network buckets and supported
+Health Connect metrics populate these views. Missing, denied and unavailable
+values retain their status instead of becoming invented zeros. Repeated events
+and source IDs are deduplicated; Android usage/network buckets are estimates,
+not additive hourly deltas. App transitions count observed activity-resumed
+events, which can include switching activities in one app. Health values describe
+a selected reporting origin, retain origin/method information, and do not claim
+to reproduce Health Connect's user-selected origin priority totals. All-device
+health views select one device per metric so overlapping wearable exports are
+not added together. Full records for every retained source remain accessible
+through device history even when no daily metric is derived for that source.
+
+## Storage, retention and removal
 
 New uploads prune raw JSON older than 90 days and enforce a 256 MiB cap per
-account. Older payloads are removed first when the cap is reached, while compact
-receipts retain their hashes to recognize retries. The same transaction prunes
+account. Older payloads are removed first when the cap is reached. The same
+transaction prunes
 receipts older than 365 days and enforces a 50,000-receipt cap per account.
 Time-based pruning runs when that account uploads a new batch; an inactive
 account's existing rows are retained until its next upload or account deletion.
-These caps bound stored data; receipts pruned after those limits no
-longer provide duplicate detection. Status returns metadata for the last 20
-receipts, not private exported records. The raw exports remain in SQLite and
-are not yet consumed by the planner or displayed as charts. Source records can
-overlap across batches: the phone refreshes recent health/calendar history to
-capture delayed inserts and updates. Future aggregations must identify Health
-Connect records by their record ID and last-modified time, and calendar instances
-by event ID and instance start, rather than sum repeated raw rows.
+The native status endpoint returns metadata for the latest 20 receipts; the
+browser device-history endpoint paginates all retained receipts and source data.
+Expired raw payloads are explicitly labeled and raw/source requests return 410.
+
+Durable `native_device_stats` counters and `native_seen_batches` batch hashes
+survive raw/receipt pruning. Exact retry uploads stay idempotent and do not
+increase the unique sync count. New devices track all accepted batches from
+registration. On upgrade, legacy device counters and first/latest known dates
+are backfilled from retained receipts; `counter_backfilled` and `sync_count_note`
+explain that older expired history cannot be reconstructed.
+
+Derived wellbeing history has separate limits: up to **365 days, 100,000 compact
+facts / 64 MiB, and 60,000 source observations per device**. Ingestion derives at
+most 100,000 records per batch. Pruning occurs while processing device exports;
+large histories can be incomplete under these caps. Daily summaries use retained
+facts and remain available after their original raw batch expires, within the
+derived limits. Source record counts describe the latest read for a day; weekly
+source counts are daily observations rather than unique raw record counts.
+Health rereads update source IDs/revisions; they do not multiply repeated totals.
+The Android app's rolling reread still does not provide a complete deletion/change
+feed for older provider records.
+
+Confirmed **Remove device** deletes its registration, raw batches, receipts,
+counters, retry ledger, derived facts/day views and source observations through
+database cascades. A minimal account-owned SHA-256 identifier tombstone remains
+to prevent the old background worker from silently registering again. Later
+registration/upload attempts for that account and identifier return **410**,
+which the existing collector treats as a stopped upload connection. Reconnection
+requires a new device identifier. Local Android data is managed independently;
+browser removal does not erase the phone's encrypted queue or local history.
+Account deletion also removes the revocation tombstones. Signing out or revoking
+a source permission alone does not delete exports already stored on the server.
+
+## Verification
 
 ```sh
 .venv/bin/python -m pytest data_sync/native_app/server/tests -q
 ```
 
-Integration tests exercise the existing auth and account deletion behavior,
-session revocation, tenant isolation, repeated device registration, batch
-idempotency, conflicting retries, request validation, nested credentials,
-declared/streaming size limits, raw-data retention and WebView cookie bootstrap.
-The WebView test expects the existing dashboard's `dist/index.html`, created by
-`npm run build` above.
+Integration tests exercise existing auth/account deletion, session revocation,
+tenant isolation, repeated registration, idempotency after receipt expiry,
+conflicting retries, request validation, credential rejection, body limits,
+retention, cookie bootstrap compatibility, complete source/record pagination,
+authenticated APK setup/downloads, populated-history removal and upload
+revocation, and both server import orders. Wellbeing tests cover timezone/day
+boundaries, calendar weeks, overlapping events/buckets/health origins, SDK units,
+denied/missing data, bounded backfills/storage, and malformed future fields.
+
+```sh
+npm run build
+npx playwright test tests/devices.spec.js
+```
+
+The device browser suite exercises both sidebar tabs, connection setup, raw
+source history, daily/weekly views, and confirmed removal with isolated data.
+The existing cookie-bootstrap test expects `dist/index.html`, created by the
+web build above. No APK rebuild is required to use Phase 4 with the current
+collector; the native ingestion wire contract is unchanged.
