@@ -492,6 +492,25 @@ The startup check confirmed its existing device through the server's authenticat
 device list. Removed-device recovery was tested with isolated state and queue
 fixtures; the active live device and its server history were preserved.
 
+Version `0.3.7` passed 97 Kotlin/JVM tests and 24 TypeScript tests, plus TypeScript
+checking and Android lint for both APK variants with zero errors. All ten APKs
+passed signing-certificate, version, checksum, ABI and compressed bundle checks.
+Fresh-install checks used a separate app ID on Android 15, preserving the existing
+collector. Setup opened Usage Access automatically; denial returned an actionable
+message, and retry with approval advanced to the device permission dialogs.
+Declining optional permissions and returning from battery settings still started
+local collection. The second card kept upload consent unchecked and no account
+was connected. Info buttons showed source descriptions and reasons for access.
+Android 14+ Health Connect uses the runtime permission bridge; older providers
+use their permission activity. On Android 15, the automatic collection action
+opened Health Connect onboarding and the real category approval screen.
+Optional launch errors remain visible through status refresh instead of disappearing.
+Declining Health Connect, then skipping background location and battery settings,
+also completed local collection without a server connection. Updating the existing
+LAN app preserved its sign-in, server address, enabled hourly collection/uploads,
+and all 24 collection jobs. Existing job details remained readable, both compact
+setup cards displayed the saved status, and no fatal crash was recorded.
+
 Further device validation should cover a real Android phone with populated usage and
 Health Connect data: skip login, complete local onboarding, collect in airplane
 mode, reopen after process death/reboot, connect later and upload the queue,
