@@ -260,6 +260,8 @@ npm run build:apk
 
 The script exports the universal APK at `data_sync/apk/forma-data-sync-preview.apk`, smaller APKs for each CPU architecture, and SHA-256 checksums. They include the JavaScript bundle, run without Metro, and are signed with a local debug key for testing. Local collection needs no server; enter a reachable **HTTPS** server URL when connecting this preview app. Production release builds need your own signing configuration. See [Choose a smaller APK](data_sync/README.md#choose-a-smaller-apk) for download links and device architecture checks.
 
+To rebuild both the HTTPS and LAN preview APKs in one step, run `./build.sh` from the repository root. `./build.sh lan --install` also updates the connected device and keeps its data. Run `./build.sh --help` for options.
+
 Both the regular backend and companion entry points include Android ingestion and the Phase 4 browser APIs. For a phone on your LAN, the companion binds to all network interfaces by default. Run these commands from the repository root:
 
 ```sh

@@ -227,7 +227,15 @@ sdkmanager "platform-tools" "platforms;android-36" "build-tools;36.0.0" "ndk;27.
 
 ### 3. Build on Linux or macOS
 
-Start in the **repository root** (`exercise_planner/`):
+For a one-step rebuild, run `./build.sh` from the repository root. It finds
+JDK 17 and the Android SDK, or uses `JAVA_HOME` and `ANDROID_HOME` when set. It
+builds the HTTPS and LAN previews and exports them with checksums. Run
+`./build.sh lan` or `./build.sh preview` to build one variant. Add `--install`
+to update the connected device with `adb install -r`, which keeps the app's data.
+`--install` uses the LAN build unless you choose `preview`, because both variants
+share one app ID. Run `./build.sh --help` for all options.
+
+To run the steps yourself, start in the **repository root** (`exercise_planner/`):
 
 ```bash
 cd data_sync/native_app
