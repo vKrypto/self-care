@@ -4,6 +4,7 @@ import type {Permissions, Session, SyncStatus} from './types';
 
 interface Props {
   permissions: Permissions | null; status: SyncStatus | null; session: Session | null;
+  permissionErrors: string[];
   busy: boolean; serverUrl: string; email: string; password: string; historyDays: string;
   localConsent: boolean; uploadConsent: boolean; allowLanHttp: boolean;
   onServerUrl: (value: string) => void; onEmail: (value: string) => void;
@@ -45,8 +46,8 @@ export default function SetupScreen(props: Props) {
   const {permissions: p, status, session, busy} = props;
   const healthRequested = p?.health.requested_permissions ?? [];
   const healthGranted = p?.health.granted_permissions ?? [];
-  const healthReady = healthRequested.length > 0 && healthRequested.every(permission => healthGranted.includes(permission));
-  const healthAvailable = healthRequested.length > 0;
+  const healthAvailable = p?.health.status === 'ok' && healthRequested.length > 0;
+  const healthReady = healthAvailable && healthRequested.every(permission => healthGranted.includes(permission));
   const collecting = !!status?.collectionEnabled;
   const localConfigured = !!status?.onboarded;
   const runtime = () => props.onPermission('runtime');
@@ -61,7 +62,7 @@ export default function SetupScreen(props: Props) {
             disabled={busy || (!localConfigured && !props.localConsent)} />
         </View>
         <Text style={styles.subtitle}>{collecting ? 'Hourly collection is on.' : 'Start opens the missing Android permission screens.'}</Text>
-        {!!p?.requestErrors?.length && <Text style={styles.httpNote}>{p.requestErrors.join('\n')}</Text>}
+        {!!props.permissionErrors.length && <Text accessibilityRole="alert" style={styles.httpNote}>{props.permissionErrors.join('\n')}</Text>}
         <PermissionRow title="App & screen usage" granted={!!p?.usageAccess} status={p?.usageAccess ? 'Allowed · required' : 'Required'}
           description="Android Usage Access reads app foreground time, activity transitions, available screen/unlock events, app metadata and per-app network totals. In Android settings, select Forma and turn on Permit usage access. Detailed event history is usually kept for only a few days."
           why="To build your app and screen usage history. Collection needs this access." busy={busy} onPress={() => props.onPermission('usage')} />
@@ -82,7 +83,7 @@ export default function SetupScreen(props: Props) {
         <PermissionRow title="Background location" granted={!!p?.backgroundLocation} description="After granting Location, select Allow all the time in Android app permissions. Android 10 may show a separate prompt."
           why="To include available location snapshots in hourly jobs while the app is closed." busy={busy} onPress={() => props.onPermission('background')} />
         <PermissionRow title="Background & battery" granted={!!p?.batteryUnrestricted} status={p?.batteryUnrestricted ? 'Unrestricted' : 'Restricted'}
-          description="Allow Forma to run without battery optimization. Hourly jobs use Android WorkManager and resume after reboot. Android can still delay jobs; force-stop pauses work until you reopen Forma."
+          description="In Android’s battery list, choose All apps, select Forma, and allow unrestricted background use or choose Don’t optimize. Labels vary by Android version. Hourly jobs use Android WorkManager and resume after reboot. Android can still delay jobs; force-stop pauses work until you reopen Forma."
           why="To reduce delays in collection and uploads while the app is closed." busy={busy} onPress={() => props.onPermission('battery')} />
         <View style={styles.historyRow}><Text style={styles.permissionTitle}>Initial history</Text>
           <TextInput accessibilityLabel="Initial history days" value={props.historyDays} onChangeText={props.onHistoryDays}

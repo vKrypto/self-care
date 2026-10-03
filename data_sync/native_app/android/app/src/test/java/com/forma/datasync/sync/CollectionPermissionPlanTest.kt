@@ -7,6 +7,20 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class CollectionPermissionPlanTest {
+    @Test fun frameworkHealthContractUsesRuntimeBridgeRatherThanLaunchingSyntheticIntent() {
+        assertEquals(HealthPermissionLaunch.RUNTIME, HealthPermissionLaunchPlan.forAction(
+            "androidx.activity.result.contract.action.REQUEST_PERMISSIONS"))
+    }
+
+    @Test fun legacyHealthProviderRetainsActivityResultFlow() {
+        assertEquals(HealthPermissionLaunch.PROVIDER_ACTIVITY,
+            HealthPermissionLaunchPlan.forAction("androidx.health.ACTION_REQUEST_PERMISSIONS"))
+    }
+
+    @Test fun explicitProviderActivityWithoutActionRetainsActivityResultFlow() {
+        assertEquals(HealthPermissionLaunch.PROVIDER_ACTIVITY, HealthPermissionLaunchPlan.forAction(null))
+    }
+
     private fun needs(
         usage: Boolean = false, runtime: Boolean = false, health: Boolean = false,
         location: Boolean = false, background: Boolean = false, battery: Boolean = false,

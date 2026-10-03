@@ -22,9 +22,9 @@ For tool installation, platform-specific build commands, and APK installation,
 see the [Android APK build guide](../README.md). The generated standalone test
 APK is available at [`../apk/forma-data-sync-preview.apk`](../apk/forma-data-sync-preview.apk).
 Version `0.3.7` also exports smaller APKs for each architecture. See
-[Choose a smaller APK](../README.md#choose-a-smaller-apk). The last measured
-`0.3.6` downloads were 6.69 MB for ARM64 LAN, 6.80 MB for the connected x86_64
-test device, and 19.07 MB for universal LAN, reduced from 51.98 MB.
+[Choose a smaller APK](../README.md#choose-a-smaller-apk). The `0.3.7` downloads
+are 6.70 MB for ARM64 LAN, 6.80 MB for the connected x86_64 test device, and
+19.07 MB for universal LAN, reduced from 51.98 MB.
 
 ## Run the server
 
@@ -173,7 +173,7 @@ after a direct Gradle build.
 ## Flow
 
 1. In **Start collecting data**, select requested history (1–365 days), accept
-   explicit local-collection consent, and press the primary collection action.
+   explicit local-collection consent, and press **Start**.
    No account or server is required. The app opens Android permission dialogs
    and settings sequentially, refreshing status when returning to the app.
 2. **Usage Access** is required for app usage, screen events, and network usage.
@@ -187,8 +187,8 @@ after a direct Gradle build.
    onboarding survives app restarts. The dashboard shows collection status,
    queue size, **Collect now**, and separate collection pause/resume controls.
 4. **Sync to server** is the second, optional setup card. Enter the server URL,
-   sign in, accept separate upload consent, and press **Sync to server**. The
-   action runs permission checks before registering the device and enabling a
+   email and password, accept separate upload consent, and press **Sync**. The
+   action checks permissions, signs in if needed, registers the device and enables a
    separate hourly upload worker requiring a network. Signing in alone or
    starting local collection does not enable uploads. Enabling uploads sends
    eligible queued records and newly collected data. The connected
@@ -208,7 +208,7 @@ after a direct Gradle build.
 7. Removing a device in the website's **Connected devices** tab disconnects that
    upload identity. Version `0.3.7` recognizes removal from the server's device
    list or a rejected upload. **Reconnect & review upload consent** opens settings;
-   approving upload consent and pressing **Sync to server** registers a new identity.
+   approving upload consent and pressing **Sync** registers a new identity.
    A failed registration keeps the prior identity and data. Signing in, restarting,
    or pressing **Resume uploads** does not bypass removal. Batches for the previous
    connection remain in **Sync history**, use local queue storage, and are counted

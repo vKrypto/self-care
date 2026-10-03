@@ -59,14 +59,14 @@ These are local build artifacts and are excluded from Git.
 ### Choose a smaller APK
 
 Version `0.3.7` builds a separate APK for each CPU architecture, plus a universal
-APK. The last measured `0.3.6` LAN builds had these download sizes:
+APK. The `0.3.7` LAN builds have these download sizes:
 
 | Device architecture | APK | Size |
 | --- | --- | --- |
-| ARM64 (`arm64-v8a`) | [ARM64 LAN APK](apk/forma-data-sync-lan-preview-arm64-v8a.apk) | 6.69 MB |
+| ARM64 (`arm64-v8a`) | [ARM64 LAN APK](apk/forma-data-sync-lan-preview-arm64-v8a.apk) | 6.70 MB |
 | 32-bit ARM (`armeabi-v7a`) | [ARM LAN APK](apk/forma-data-sync-lan-preview-armeabi-v7a.apk) | 6.14 MB |
 | 64-bit x86 (`x86_64`) | [x86_64 LAN APK](apk/forma-data-sync-lan-preview-x86_64.apk) | 6.80 MB |
-| 32-bit x86 (`x86`) | [x86 LAN APK](apk/forma-data-sync-lan-preview-x86.apk) | 7.10 MB |
+| 32-bit x86 (`x86`) | [x86 LAN APK](apk/forma-data-sync-lan-preview-x86.apk) | 7.11 MB |
 | All four architectures | [Universal LAN APK](apk/forma-data-sync-lan-preview.apk) | 19.07 MB |
 
 Sizes use decimal MB. The previous universal APK was 51.98 MB. The connected
@@ -111,7 +111,7 @@ collection permissions, settings, queued records, and sync history. Uninstalling
 or clearing app storage deletes local records; neither is needed for this update.
 
 Open **Forma Data Sync Preview**. In the first setup card, choose your history
-range, accept local collection consent, and tap **Start collecting data**.
+range, accept local collection consent, and tap **Start**.
 The app opens required Android dialogs and settings one at a time. **Usage
 Access** is required for app usage, screen events, and network usage: enable
 Forma on that Android settings screen and return to the app. If it remains
@@ -129,9 +129,9 @@ screens; the app cannot enable it silently.
 
 The second card, **Sync to server**, is optional. Enter a reachable **HTTPS
 server origin** (for example, `https://forma.example.com`) and your Forma email
-and password, sign in, then accept the separate upload consent and tap **Sync
-to server**. This action also runs permission checks before connecting. Signing
-in alone or using the first card does not enable uploads. This APK includes its
+and password, accept the separate upload consent, and tap **Sync**. It signs
+in and connects the device after checking permissions. Starting local collection
+alone does not enable uploads. This APK includes its
 JavaScript bundle and runs without a Metro development server.
 
 For a server on the same local network, install the standalone

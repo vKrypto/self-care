@@ -122,7 +122,10 @@ internal class PermissionRequestCoordinator(private val context: ReactApplicatio
         PermissionStatus.read(context)
     }
 
-    private suspend fun <T> exclusive(action: suspend () -> T): T = withContext(Dispatchers.Main.immediate) {
+    // Dispatch resumed continuations after Android/React finishes delivering each callback.
+    // React clears its runtime permission listener after our listener returns; an inline
+    // continuation could register the next dialog's listener before that cleanup.
+    private suspend fun <T> exclusive(action: suspend () -> T): T = withContext(Dispatchers.Main) {
         check(!closed) { "Open the app to request permissions." }
         check(!running) { "A permission request is already open. Return to the app to finish it first." }
         activity()
@@ -196,10 +199,17 @@ internal class PermissionRequestCoordinator(private val context: ReactApplicatio
     private suspend fun health(requested: Set<String>) {
         if (requested.isEmpty()) return
         awaitForeground()
+        val host = activity()
+        val intent = HealthPermissions.permissionContract().createIntent(host, requested)
+        if (HealthPermissionLaunchPlan.forAction(intent.action) == HealthPermissionLaunch.RUNTIME) {
+            // Health Connect is part of the framework on Android 14+. Its contract's
+            // synthetic REQUEST_PERMISSIONS intent is normally interpreted by the
+            // AndroidX result registry; ReactActivity uses its native runtime bridge.
+            runtime(requested.toTypedArray())
+            return
+        }
         val code = requestCode()
         awaitReturn(settings = false, requestCode = code) {
-            val host = activity()
-            val intent = HealthPermissions.permissionContract().createIntent(host, requested)
             @Suppress("DEPRECATION")
             host.startActivityForResult(intent, code)
         }

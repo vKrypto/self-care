@@ -11,12 +11,12 @@ interface DataSyncModule {
   login(serverUrl: string, email: string, password: string): Promise<Session>;
   permissionStatus(): Promise<Permissions>;
   requestCollectionPermissions(): Promise<Permissions>;
-  openUsageSettings(): Promise<void>;
-  requestRuntimePermissions(): Promise<void>;
-  requestHealthPermissions(): Promise<void>;
-  openBatterySettings(): Promise<void>;
-  openHealthSettings(): Promise<void>;
-  openBackgroundLocationSettings(): Promise<void>;
+  openUsageSettings(): Promise<Permissions>;
+  requestRuntimePermissions(): Promise<Permissions>;
+  requestHealthPermissions(): Promise<Permissions>;
+  openBatterySettings(): Promise<Permissions>;
+  openHealthSettings(): Promise<Permissions>;
+  openBackgroundLocationSettings(): Promise<Permissions>;
   completeOnboarding(historyDays: number): Promise<Session>;
   startCollection(historyDays: number): Promise<SyncStatus>;
   collectNow(): Promise<SyncStatus>;

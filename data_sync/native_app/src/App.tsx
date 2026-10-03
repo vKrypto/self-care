@@ -33,6 +33,7 @@ function Content() {
   const [email, setEmail] = useState(ALLOW_LAN_HTTP ? dataSync.defaultEmail : '');
   const [password, setPassword] = useState(ALLOW_LAN_HTTP ? dataSync.defaultPassword : '');
   const [permissions, setPermissions] = useState<Permissions | null>(null);
+  const [permissionErrors, setPermissionErrors] = useState<string[]>([]);
   const [status, setStatus] = useState<SyncStatus | null>(null);
   const [settings, setSettings] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
@@ -105,7 +106,7 @@ function Content() {
   const perform = async (action: () => Promise<unknown>) => {
     if (actionBusy.current) { return; }
     actionBusy.current = true;
-    setBusy(true); setError('');
+    setBusy(true); setError(''); setPermissionErrors([]);
     try { await action(); await refresh(); }
     catch (e) {
       setError(e instanceof Error ? e.message : 'Please retry.');
@@ -116,9 +117,13 @@ function Content() {
     finally { actionBusy.current = false; setBusy(false); }
   };
 
+  const rememberPermissions = (current: Permissions) => {
+    setPermissions(current); setPermissionErrors(current.requestErrors ?? []);
+  };
+
   const startLocally = () => perform(async () => {
     const current = await startLocalSetup(dataSync, {historyDays, consent: localConsent,
-      alreadyCollecting: !!status?.onboarded, onPermissions: setPermissions});
+      alreadyCollecting: !!status?.onboarded, onPermissions: rememberPermissions});
     setStatus(current); setSettings(true); setShowSignIn(false); setConsent(false); setLocalConsent(false);
   });
 
@@ -127,7 +132,7 @@ function Content() {
     const revision = ++authRevision.current;
     await syncServerSetup(dataSync, {
       historyDays, localConfigured: !!status?.onboarded, uploadConsent: consent,
-      session: sessionRef.current, serverUrl: origin, email, password, onPermissions: setPermissions,
+      session: sessionRef.current, serverUrl: origin, email, password, onPermissions: rememberPermissions,
       onSession: saved => {
         if (revision !== authRevision.current) { throw new Error('Your account changed. Review sync consent again.'); }
         rememberSession(saved); setServerUrl(saved.serverUrl); setEmail(saved.user.email); setPassword('');
@@ -180,7 +185,7 @@ function Content() {
       health: () => dataSync.requestHealthPermissions(), healthSettings: () => dataSync.openHealthSettings(),
       background: () => dataSync.openBackgroundLocationSettings(), battery: () => dataSync.openBatterySettings(),
     };
-    void perform(actions[permission]);
+    void perform(async () => rememberPermissions(await actions[permission]()));
   };
   const collectionPanel = <View style={styles.syncBar}>
     <View style={styles.row}><Text style={styles.cardTitle}>Collection & storage</Text><Button title="Sync history" secondary onPress={() => setShowHistory(true)} /></View>
@@ -214,7 +219,7 @@ function Content() {
     {!!error && <View accessibilityRole="alert" style={styles.error}><Text style={styles.errorText}>{error}</Text></View>}
     {busy && <ActivityIndicator color="#267957" style={styles.spinner} />}
 
-    {onboarding ? <SetupScreen permissions={permissions} status={status} session={session} busy={busy}
+    {onboarding ? <SetupScreen permissions={permissions} permissionErrors={permissionErrors} status={status} session={session} busy={busy}
       serverUrl={serverUrl} email={email} password={password} historyDays={historyDays}
       localConsent={localConsent} uploadConsent={consent} allowLanHttp={ALLOW_LAN_HTTP}
       onServerUrl={setServerUrl} onEmail={setEmail} onPassword={setPassword} onHistoryDays={setHistoryDays}

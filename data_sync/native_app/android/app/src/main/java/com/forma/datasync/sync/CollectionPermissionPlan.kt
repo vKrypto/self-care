@@ -1,5 +1,19 @@
 package com.forma.datasync.sync
 
+import androidx.activity.result.contract.ActivityResultContracts
+
+internal enum class HealthPermissionLaunch { RUNTIME, PROVIDER_ACTIVITY }
+
+internal object HealthPermissionLaunchPlan {
+    /** Android 14+ contracts return an AndroidX instruction, not a launchable activity. */
+    fun forAction(action: String?): HealthPermissionLaunch =
+        if (action == ActivityResultContracts.RequestMultiplePermissions.ACTION_REQUEST_PERMISSIONS) {
+            HealthPermissionLaunch.RUNTIME
+        } else {
+            HealthPermissionLaunch.PROVIDER_ACTIVITY
+        }
+}
+
 /** Android settings can emit resume before leaving the app; require a real return. */
 internal class PermissionReturnGate(private val settings: Boolean, resumed: Boolean) {
     private var hostResumed = resumed
