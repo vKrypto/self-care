@@ -11,9 +11,10 @@ const local: SyncStatus = {
   storageLimitBytes: 100 * 1024 * 1024,
 };
 
-test('first launch permits login or an explicit skip into local onboarding', () => {
-  assert.equal(collectionScreen(null, {...local, onboarded: false}, false, false), 'login');
+test('first launch opens collection setup and sign-in remains optional', () => {
+  assert.equal(collectionScreen(null, {...local, onboarded: false}, false, false), 'onboarding');
   assert.equal(collectionScreen(null, {...local, onboarded: false}, true, false), 'onboarding');
+  assert.equal(collectionScreen(null, {...local, onboarded: false}, false, true), 'onboarding');
 });
 
 test('persisted guest collection opens the dashboard without a session', () => {
@@ -28,7 +29,7 @@ test('signed-in users can remain local and explicitly open connection consent', 
 });
 
 test('sign-in navigation preserves the collector and returns to its dashboard', () => {
-  assert.equal(collectionScreen(null, local, false, true), 'login');
+  assert.equal(collectionScreen(null, local, false, true), 'onboarding');
   assert.equal(collectionScreen(null, local, false, false), 'dashboard');
 });
 

@@ -10,6 +10,7 @@ interface DataSyncModule {
   restoreSession(): Promise<Session | null>;
   login(serverUrl: string, email: string, password: string): Promise<Session>;
   permissionStatus(): Promise<Permissions>;
+  requestCollectionPermissions(): Promise<Permissions>;
   openUsageSettings(): Promise<void>;
   requestRuntimePermissions(): Promise<void>;
   requestHealthPermissions(): Promise<void>;

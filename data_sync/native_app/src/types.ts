@@ -14,6 +14,7 @@ export interface Permissions {
   usageAccess: boolean; notifications: boolean; activityRecognition: boolean;
   calendar: boolean; location: boolean; backgroundLocation: boolean;
   batteryUnrestricted: boolean; health: HealthStatus;
+  requestErrors?: string[];
 }
 export interface SyncStatus {
   enabled: boolean; lastSyncAt: number | null; lastError: string | null;

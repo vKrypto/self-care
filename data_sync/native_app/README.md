@@ -6,19 +6,25 @@ companion entry point for the existing Forma server. Phase 4 adds account-owned
 device history and Digital wellbeing to the web dashboard, using the collector's
 existing export contract. iOS is deferred.
 
-Version `0.3.6` adds recovery for a device removed from the website. The app stops
-uploads for that connection and keeps collecting locally. Review upload consent
-to create a new connection without clearing the app's storage or local history.
+Version `0.3.7` uses two compact setup cards: **Start collecting data**, then
+optional **Sync to server**. Primary actions request Android permissions in
+sequence. Permission rows show status and an action; info icons explain the
+exact data and a short reason for access. Login and local collection remain
+independent of upload consent.
+
+The app also recovers a device removed from the website. It stops uploads for
+that connection and keeps collecting locally. Review upload consent to create
+a new connection without clearing the app's storage or local history.
 Queued data assigned to the removed connection remains local; fresh and
 unassigned collections can upload through the new connection.
 
 For tool installation, platform-specific build commands, and APK installation,
 see the [Android APK build guide](../README.md). The generated standalone test
 APK is available at [`../apk/forma-data-sync-preview.apk`](../apk/forma-data-sync-preview.apk).
-Version `0.3.5` also exports smaller APKs for each architecture. See
-[Choose a smaller APK](../README.md#choose-a-smaller-apk): the ARM64 LAN download
-is 6.69 MB, the connected x86_64 test device's download is 6.79 MB, and the
-universal LAN download is 19.06 MB, reduced from 51.98 MB.
+Version `0.3.7` also exports smaller APKs for each architecture. See
+[Choose a smaller APK](../README.md#choose-a-smaller-apk). The last measured
+`0.3.6` downloads were 6.69 MB for ARM64 LAN, 6.80 MB for the connected x86_64
+test device, and 19.07 MB for universal LAN, reduced from 51.98 MB.
 
 ## Run the server
 
@@ -85,8 +91,8 @@ only into the LAN variant; normal preview/release defaults remain empty.
 The app header identifies the build and version. If you see **HTTPS preview**
 or an HTTPS-only error for your local URL, update it with the **LAN preview APK**.
 An existing signed-in session keeps its own server/account and clears the test
-password. Login still requires tapping **Sign in**, and uploads still require
-permission and consent onboarding.
+password. Login still requires tapping **Sign in**; enable uploads separately
+with upload consent and **Sync to server** in the second setup card.
 
 ## Run Android
 
@@ -166,19 +172,26 @@ after a direct Gradle build.
 
 ## Flow
 
-1. Choose **Skip login** to use the app as a local data collector, or sign in with
-   email, password and the companion server origin. A server is only needed for
-   login and uploads.
-2. Local onboarding selects requested history (1–365 days), source permissions,
-   background settings, and explicit local-collection consent. Usage Access is
-   required; other sources can be granted individually or denied.
+1. In **Start collecting data**, select requested history (1–365 days), accept
+   explicit local-collection consent, and press the primary collection action.
+   No account or server is required. The app opens Android permission dialogs
+   and settings sequentially, refreshing status when returning to the app.
+2. **Usage Access** is required for app usage, screen events, and network usage.
+   Enable Forma on the Android Usage Access screen and return. If it remains
+   denied, setup displays an actionable message and lets you retry. Other
+   sources are optional; denied or unavailable sources keep their status while
+   collection proceeds with granted sources. Each compact permission row has
+   a status, action, and info icon explaining the exact data and why it is read.
 3. Collection stores permitted data in an encrypted local queue and schedules a
    unique hourly Android WorkManager job with no network requirement. Local
    onboarding survives app restarts. The dashboard shows collection status,
    queue size, **Collect now**, and separate collection pause/resume controls.
-4. Sign in and accept upload consent in connection settings to register the
-   device and enable a separate hourly upload worker requiring a network. This
-   sends eligible queued records and newly collected data. The connected
+4. **Sync to server** is the second, optional setup card. Enter the server URL,
+   sign in, accept separate upload consent, and press **Sync to server**. The
+   action runs permission checks before registering the device and enabling a
+   separate hourly upload worker requiring a network. Signing in alone or
+   starting local collection does not enable uploads. Enabling uploads sends
+   eligible queued records and newly collected data. The connected
    dashboard provides upload status, **Sync now**, upload pause/resume and
    connection settings. **Open website** launches the configured server origin
    in the phone's external browser, with no token or password in the URL. The
@@ -193,9 +206,9 @@ after a direct Gradle build.
    locally without signing in; successfully uploaded records remain viewable
    within the local history retention limits described below.
 7. Removing a device in the website's **Connected devices** tab disconnects that
-   upload identity. Version `0.3.6` recognizes removal from the server's device
+   upload identity. Version `0.3.7` recognizes removal from the server's device
    list or a rejected upload. **Reconnect & review upload consent** opens settings;
-   approving **Create new connection & enable uploads** registers a new identity.
+   approving upload consent and pressing **Sync to server** registers a new identity.
    A failed registration keeps the prior identity and data. Signing in, restarting,
    or pressing **Resume uploads** does not bypass removal. Batches for the previous
    connection remain in **Sync history**, use local queue storage, and are counted
@@ -294,11 +307,24 @@ routes may require per-session foreground consent and are not automatically
 unlocked by the exercise read permission. Multiple health origins can report
 overlapping measurements; raw exports preserve source IDs for deduplication.
 
-Permission buttons open Android's real dialogs/settings. Background location is
-requested separately after foreground location. Battery settings let the user
-review restrictions. Notifications are requested to support sync status/error
-messages. The Health Connect rationale activity explains the data categories and
-recipient. Read permissions are used; the app does not modify health records.
+The primary collection action and explicit **Sync to server** action open
+Android's real dialogs/settings sequentially, rather than requiring every
+permission row to be opened manually. Already granted permissions are skipped.
+Usage Access is a special-access setting: Android requires the user to enable
+Forma there and return to the app; a runtime permission popup cannot grant it.
+Compact rows allow a denied permission to be retried later, and their info icons
+describe the exact data and purpose.
+
+Optional requests cover calendar, foreground location, activity recognition,
+notifications, supported Health Connect read categories, background location,
+and battery restrictions. Background location is requested separately after
+foreground location. Battery settings let the user review restrictions.
+Notifications support sync status/error messages. If the Health Connect provider
+is unavailable, the automatic sequence skips it; its row provides an
+install/settings link. The Health Connect rationale activity explains the data
+categories and recipient. Read permissions are used; the app does not modify
+health records. Denying an optional permission skips the affected source while
+other granted sources continue collecting.
 
 Android does not expose complete lifetime history, other apps' private storage,
 private messages, passwords or retrospective continuous sensor/GPS recordings
@@ -454,6 +480,17 @@ their compressed bundles decompress to exactly the same Hermes bytecode as
 `0.3.4`. Both preview variants passed Android lint with no errors. Cold-launch
 checks measured Android activity launch, not complete React Native startup.
 Health Connect categories still need validation on a phone with populated records.
+
+Version `0.3.6` passed 84 Kotlin/JVM tests covering removal, per-account identity
+isolation, registration acknowledgment, and retained queue ownership. TypeScript
+checks and tests passed, and both APK variants passed Android lint with no errors.
+All ten exported APKs passed checksum, signing-certificate, ABI, version, and
+compressed Hermes bundle checks. Updating the connected test device preserved
+its signed-in session, enabled collection/uploads, and all 24 local collection
+jobs; retained collection details and server acknowledgments remained readable.
+The startup check confirmed its existing device through the server's authenticated
+device list. Removed-device recovery was tested with isolated state and queue
+fixtures; the active live device and its server history were preserved.
 
 Further device validation should cover a real Android phone with populated usage and
 Health Connect data: skip login, complete local onboarding, collect in airplane

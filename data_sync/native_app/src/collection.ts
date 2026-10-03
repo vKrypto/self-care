@@ -1,8 +1,7 @@
 import type {Session, SyncStatus} from './types';
 
-export function collectionScreen(session: Session | null, status: SyncStatus | null, settings: boolean, signIn: boolean): 'login' | 'onboarding' | 'dashboard' {
-  if (signIn || (!session && !status?.onboarded && !settings)) { return 'login'; }
-  if (settings || !status?.onboarded) { return 'onboarding'; }
+export function collectionScreen(_session: Session | null, status: SyncStatus | null, settings: boolean, signIn: boolean): 'onboarding' | 'dashboard' {
+  if (signIn || settings || !status?.onboarded) { return 'onboarding'; }
   return 'dashboard';
 }
 

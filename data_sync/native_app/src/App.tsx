@@ -1,20 +1,18 @@
 import React, {useCallback, useEffect, useRef, useState} from 'react';
 import {
-  ActivityIndicator, AppState, KeyboardAvoidingView, Linking, Platform, Pressable,
-  ScrollView, StyleSheet, Text, TextInput, View,
+  ActivityIndicator, AppState, Linking, Pressable, ScrollView, StyleSheet, Text, View,
 } from 'react-native';
 import {SafeAreaProvider, SafeAreaView} from 'react-native-safe-area-context';
 import {dataSync} from './native';
 import {collectionScreen, readableBytes} from './collection';
 import SyncHistoryScreen from './SyncHistoryScreen';
+import SetupScreen from './SetupScreen';
+import {startLocalSetup, syncServerSetup} from './setup';
 import type {Permissions, Session, SyncStatus} from './types';
 import {normalizeServerUrl} from './validation';
 
-const CONSENT = 'I agree to upload the device usage, calendar, location and health data I grant access to, including sensitive health categories, to my configured Forma server. I can revoke permissions or pause uploads at any time.';
-const LOCAL_CONSENT = 'I agree to collect the device usage, calendar, location and health data I grant access to, including sensitive health categories, and store it encrypted on this device. I can revoke permissions or pause collection at any time.';
 const ALLOW_LAN_HTTP = dataSync.allowLanHttp === true;
 const BUILD_LABEL = `${ALLOW_LAN_HTTP ? 'LAN preview' : __DEV__ ? 'Development' : 'HTTPS preview'} · ${dataSync.appVersion}`;
-const HTTP_NOTICE = 'HTTP has no in-transit encryption: your sign-in details and uploaded data can be read on the network. Use it only on a trusted LAN for testing, or use HTTPS.';
 
 function Button({title, onPress, disabled = false, secondary = false}: {
   title: string; onPress: () => void; disabled?: boolean; secondary?: boolean;
@@ -23,18 +21,6 @@ function Button({title, onPress, disabled = false, secondary = false}: {
     style={({pressed}) => [styles.button, secondary && styles.secondaryButton, (disabled || pressed) && styles.dim]}>
     <Text style={[styles.buttonText, secondary && styles.secondaryText]}>{title}</Text>
   </Pressable>;
-}
-
-function PermissionCard({title, description, granted, action, onPress, disabled}: {
-  title: string; description: string; granted: boolean; action: string;
-  onPress: () => void; disabled: boolean;
-}) {
-  return <View style={styles.card}>
-    <View style={styles.row}><Text style={styles.cardTitle}>{title}</Text>
-      <Text style={granted ? styles.granted : styles.muted}>{granted ? 'Enabled' : 'Optional / pending'}</Text></View>
-    <Text style={styles.body}>{description}</Text>
-    <Button title={action} onPress={onPress} secondary disabled={disabled} />
-  </View>;
 }
 
 function Content() {
@@ -130,36 +116,24 @@ function Content() {
     finally { actionBusy.current = false; setBusy(false); }
   };
 
-  const login = () => perform(async () => {
-    const origin = normalizeServerUrl(serverUrl, __DEV__, ALLOW_LAN_HTTP);
-    if (!email.trim() || !password) { throw new Error('Enter your email and password.'); }
-    authRevision.current++;
-    const saved = await dataSync.login(origin, email.trim().toLowerCase(), password);
-    const current = await dataSync.status();
-    setPassword(''); rememberSession(saved); setServerUrl(saved.serverUrl); setShowSignIn(false);
-    setStatus(current); setSettings(!current.connected); setConsent(false); setLocalConsent(false);
-    setHistoryDays(String(current.historyDays));
-  });
-
-  const submitOnboarding = () => perform(async () => {
-    if (!permissions?.usageAccess) { throw new Error('Enable Usage Access to collect app and screen history.'); }
-    if (session && !consent) { throw new Error('Review and accept the data upload consent.'); }
-    if ((!session || !status?.onboarded) && !localConsent) { throw new Error('Review and accept the local collection consent.'); }
-    const days = Number(historyDays);
-    if (!Number.isInteger(days) || days < 1 || days > 365) { throw new Error('Choose 1–365 days of available history.'); }
-    if (session) {
-      const saved = await dataSync.completeOnboarding(days);
-      rememberSession(saved);
-    } else { setStatus(await dataSync.startCollection(days)); }
-    setSettings(false); setConsent(false); setLocalConsent(false);
-  });
-
   const startLocally = () => perform(async () => {
-    if (!permissions?.usageAccess) { throw new Error('Enable Usage Access to collect app and screen history.'); }
-    if (!localConsent) { throw new Error('Review and accept the local collection consent.'); }
-    const days = Number(historyDays);
-    if (!Number.isInteger(days) || days < 1 || days > 365) { throw new Error('Choose 1–365 days of available history.'); }
-    setStatus(await dataSync.startCollection(days)); setSettings(false); setConsent(false); setLocalConsent(false);
+    const current = await startLocalSetup(dataSync, {historyDays, consent: localConsent,
+      alreadyCollecting: !!status?.onboarded, onPermissions: setPermissions});
+    setStatus(current); setSettings(true); setShowSignIn(false); setConsent(false); setLocalConsent(false);
+  });
+
+  const connectServer = () => perform(async () => {
+    const origin = normalizeServerUrl(sessionRef.current?.serverUrl ?? serverUrl, __DEV__, ALLOW_LAN_HTTP);
+    const revision = ++authRevision.current;
+    await syncServerSetup(dataSync, {
+      historyDays, localConfigured: !!status?.onboarded, uploadConsent: consent,
+      session: sessionRef.current, serverUrl: origin, email, password, onPermissions: setPermissions,
+      onSession: saved => {
+        if (revision !== authRevision.current) { throw new Error('Your account changed. Review sync consent again.'); }
+        rememberSession(saved); setServerUrl(saved.serverUrl); setEmail(saved.user.email); setPassword('');
+      },
+    });
+    setStatus(await dataSync.status()); setSettings(false); setShowSignIn(false); setConsent(false); setLocalConsent(false);
   });
 
   const logout = () => perform(async () => {
@@ -199,9 +173,15 @@ function Content() {
   const onboarding = screen === 'onboarding';
   const connectionRemoved = !!status?.connectionRemoved;
   const openSettings = () => { setHistoryDays(String(status?.historyDays ?? 30)); setConsent(false); setLocalConsent(false); setSettings(true); setShowSignIn(false); };
-  const openSignIn = () => { setSettings(false); setConsent(false); setLocalConsent(false); setShowSignIn(true); setError(''); };
-  const healthGranted = (permissions?.health.granted_permissions ?? []).length > 0;
-  const healthAvailability = permissions?.health.availability ?? permissions?.health.status ?? 'Checking availability';
+  const openSignIn = () => { openSettings(); setError(''); };
+  const openPermission = (permission: 'usage' | 'runtime' | 'health' | 'healthSettings' | 'background' | 'battery') => {
+    const actions = {
+      usage: () => dataSync.openUsageSettings(), runtime: () => dataSync.requestRuntimePermissions(),
+      health: () => dataSync.requestHealthPermissions(), healthSettings: () => dataSync.openHealthSettings(),
+      background: () => dataSync.openBackgroundLocationSettings(), battery: () => dataSync.openBatterySettings(),
+    };
+    void perform(actions[permission]);
+  };
   const collectionPanel = <View style={styles.syncBar}>
     <View style={styles.row}><Text style={styles.cardTitle}>Collection & storage</Text><Button title="Sync history" secondary onPress={() => setShowHistory(true)} /></View>
     <Text style={styles.cardTitle}>{status?.collectionEnabled ? 'Hourly collection enabled' : 'Local collection paused'}</Text>
@@ -222,11 +202,10 @@ function Content() {
     <View style={styles.header}>
       <View style={styles.brandBlock}><Text style={styles.brand}>forma<Text style={styles.brandDot}>.</Text></Text><Text style={styles.eyebrow}>ANDROID DATA CONNECT</Text>
         <Text style={styles.buildLabel}>{BUILD_LABEL}</Text></View>
-      {(status?.onboarded || session || onboarding) && <Button
-        title={screen === 'login' ? 'Local dashboard' : onboarding ? (status?.onboarded ? 'Dashboard' : session ? 'Sign out' : 'Back') : 'Data settings'}
+      {(status?.onboarded || session) && <Button
+        title={onboarding ? (status?.onboarded ? 'Dashboard' : session ? 'Sign out' : 'Set up') : 'Data settings'}
         secondary disabled={busy} onPress={() => {
-          if (screen === 'login') { setShowSignIn(false); }
-          else if (onboarding && status?.onboarded) { setSettings(false); }
+          if (onboarding && status?.onboarded) { setSettings(false); setShowSignIn(false); }
           else if (onboarding && session) { void logout(); }
           else if (onboarding) { setSettings(false); }
           else { openSettings(); }
@@ -235,63 +214,13 @@ function Content() {
     {!!error && <View accessibilityRole="alert" style={styles.error}><Text style={styles.errorText}>{error}</Text></View>}
     {busy && <ActivityIndicator color="#267957" style={styles.spinner} />}
 
-    {screen === 'login' ? <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-      <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
-        <Text style={styles.kicker}>YOUR ROUTINE, CONNECTED</Text>
-        <Text style={styles.title}>Your day, on your device.</Text>
-        <Text style={styles.body}>Collect and keep your available Android data locally. Sign in when you want to connect a Forma server and upload it.</Text>
-        <Button title={status?.onboarded ? 'Continue locally' : 'Skip login · collect locally'} secondary disabled={busy}
-          onPress={() => { setShowSignIn(false); setConsent(false); setLocalConsent(false); setSettings(!status?.onboarded); setError(''); }} />
-        <View style={styles.card}>
-          <Text style={styles.label}>Server URL</Text>
-          <TextInput accessibilityLabel="Server URL" value={serverUrl} onChangeText={setServerUrl} editable={!busy} style={styles.input} autoCapitalize="none" autoCorrect={false} keyboardType="url" placeholder={ALLOW_LAN_HTTP ? 'http://192.168.1.10:8000' : 'https://forma.example.com'} placeholderTextColor="#8b938d" />
-          <Text style={styles.hint}>{ALLOW_LAN_HTTP ? 'LAN test build: use http://YOUR-COMPUTER-LAN-IP:8000 with a private IPv4 address. HTTPS also works.' : `Enter the HTTPS address of your Forma server.${__DEV__ ? ' For an emulator development build, use http://10.0.2.2:8000.' : ''}`}</Text>
-          {(ALLOW_LAN_HTTP || __DEV__) && /^http:/i.test(serverUrl.trim()) && <Text style={styles.errorText}>{HTTP_NOTICE}</Text>}
-          <Text style={styles.label}>Email</Text>
-          <TextInput accessibilityLabel="Email" value={email} onChangeText={setEmail} editable={!busy} style={styles.input} autoCapitalize="none" autoCorrect={false} keyboardType="email-address" autoComplete="email" placeholder="you@example.com" placeholderTextColor="#8b938d" />
-          <Text style={styles.label}>Password</Text>
-          <TextInput accessibilityLabel="Password" value={password} onChangeText={setPassword} editable={!busy} style={styles.input} secureTextEntry autoCapitalize="none" autoCorrect={false} autoComplete="current-password" onSubmitEditing={login} />
-          <Button title="Sign in" onPress={login} disabled={busy} />
-        </View>
-        <Text style={styles.hint}>Your password is used once to sign in. A protected session token authenticates future uploads. Signing in asks for your consent before connecting local data.</Text>
-      </ScrollView>
-    </KeyboardAvoidingView> : onboarding ? <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
-      <Text style={styles.kicker}>{session ? 'SERVER CONNECTION' : 'LOCAL COLLECTION'}</Text><Text style={styles.title}>{session ? connectionRemoved ? 'Reconnect your device.' : 'Connect your data.' : 'Keep your day locally.'}</Text>
-      <Text style={styles.body}>{session ? 'Connect this device and its unassigned local data to your signed-in Forma account. Android asks you to approve each source; only granted sources are collected and uploaded.' : 'Android asks you to approve each source. Granted data is stored encrypted on this device. You can sign in and choose to upload it later.'}</Text>
-      <View style={styles.card}>
-        {session && <>
-          <Text style={styles.label}>Upload server</Text><Text style={styles.body}>{session.serverUrl}</Text>
-          {session.serverUrl.startsWith('http:') && <Text style={styles.errorText}>{HTTP_NOTICE}</Text>}
-          <Text style={styles.hint}>Signed in as {session.user.email}. Data assigned to another account stays on this device and will only upload when that account reconnects.</Text>
-          {connectionRemoved && <Text style={styles.body}>Your previous connection was removed from this account. Creating a new connection uploads future collections and unassigned local data after you approve. Batches assigned to the removed connection stay on this phone and will not be uploaded to the new connection.</Text>}
-        </>}
-        <Text style={styles.label}>Initial history (days)</Text>
-        <TextInput accessibilityLabel="Initial history days" value={historyDays} onChangeText={setHistoryDays} style={styles.input} keyboardType="number-pad" maxLength={3} />
-        <Text style={styles.hint}>1–365 days where available. Android keeps detailed usage events for only a few days. Health history beyond 30 days needs its separate permission.</Text>
-      </View>
-      <PermissionCard title="App & screen usage" description="App foreground time, activity events, screen and unlock events, available app metadata, and per-app network totals. Usage Access is required to start collection." granted={!!permissions?.usageAccess} action="Open Usage Access" disabled={busy} onPress={() => perform(() => dataSync.openUsageSettings())} />
-      <PermissionCard title="Health Connect" description={`Read available steps, sleep, workouts, vitals, nutrition, hydration, body measurements and reproductive health. Android lets you choose each category, background reads and older history. Provider: ${healthAvailability}.`} granted={healthGranted} action="Choose health permissions" disabled={busy} onPress={() => perform(() => dataSync.requestHealthPermissions())} />
-      <Text style={styles.hint}>Health background reads: {permissions?.health.background_granted ? 'enabled' : permissions?.health.background_supported ? 'permission needed' : 'unavailable on this provider; use Collect now'} · Older health history: {permissions?.health.history_granted ? 'enabled' : 'limited by Android'}</Text>
-      <Button title="Health Connect settings / install" secondary disabled={busy} onPress={() => perform(() => dataSync.openHealthSettings())} />
-      <PermissionCard title="Calendar, location & activity" description="Read calendar events, available location snapshots, and a short step counter sensor snapshot. Also requests notifications for sync failures. Android may grant any subset." granted={!!permissions?.calendar && !!permissions?.location && !!permissions?.activityRecognition && !!permissions?.notifications} action="Request device permissions" disabled={busy} onPress={() => perform(() => dataSync.requestRuntimePermissions())} />
-      <Text style={styles.hint}>Calendar {permissions?.calendar ? 'enabled' : 'off'} · Location {permissions?.location ? 'enabled' : 'off'} · Activity {permissions?.activityRecognition ? 'enabled' : 'off'} · Notifications {permissions?.notifications ? 'enabled' : 'off'}</Text>
-      <PermissionCard title="Location in the background" description="After granting location above, choose “Allow all the time” in Android app permissions to include available location snapshots during background collection. This does not reconstruct past travel." granted={!!permissions?.backgroundLocation} action="Review background location" disabled={busy} onPress={() => perform(() => dataSync.openBackgroundLocationSettings())} />
-      <PermissionCard title="Background & battery" description="Hourly collection continues after the app closes and across reboots. A connected account can also upload in the background. Select unrestricted battery use for fewer delays. Android may delay jobs; force-stop pauses work until you reopen the app." granted={!!permissions?.batteryUnrestricted} action="Review battery restrictions" disabled={busy} onPress={() => perform(() => dataSync.openBatterySettings())} />
-      <View style={styles.card}>
-        <Text style={styles.cardTitle}>Know what is available</Text>
-        <Text style={styles.body}>Available history depends on Android and the apps sharing it with Health Connect. Collection includes each source’s permission and availability status. The encrypted queue has a storage limit; collection pauses adding data when full, and its cursor stays in place so data can be retried.</Text>
-        {(!session || !status?.onboarded) && <Pressable accessibilityRole="checkbox" accessibilityState={{checked: localConsent, disabled: busy}} disabled={busy} onPress={() => setLocalConsent(!localConsent)} style={styles.consent}>
-          <Text style={styles.checkbox}>{localConsent ? '☑' : '☐'}</Text><Text style={[styles.body, styles.flex]}>{LOCAL_CONSENT}</Text>
-        </Pressable>}
-        {session && <Pressable accessibilityRole="checkbox" accessibilityState={{checked: consent, disabled: busy}} disabled={busy} onPress={() => setConsent(!consent)} style={styles.consent}>
-          <Text style={styles.checkbox}>{consent ? '☑' : '☐'}</Text><Text style={[styles.body, styles.flex]}>{CONSENT}</Text>
-        </Pressable>}
-        <Button title={session ? connectionRemoved ? 'Create new connection & enable uploads' : 'Connect account & enable uploads' : status?.onboarded ? 'Save local collection settings' : 'Start local collection'}
-          disabled={busy || (session ? !consent || (!status?.onboarded && !localConsent) : !localConsent)} onPress={submitOnboarding} />
-        {session && !status?.onboarded && <Button title="Collect locally without connecting" secondary disabled={busy || !localConsent} onPress={startLocally} />}
-      </View>
-      {session && <Button title="Sign out · keep collecting locally" secondary disabled={busy} onPress={logout} />}
-    </ScrollView> : session && status?.connected ? <ScrollView contentContainerStyle={styles.content}>
+    {onboarding ? <SetupScreen permissions={permissions} status={status} session={session} busy={busy}
+      serverUrl={serverUrl} email={email} password={password} historyDays={historyDays}
+      localConsent={localConsent} uploadConsent={consent} allowLanHttp={ALLOW_LAN_HTTP}
+      onServerUrl={setServerUrl} onEmail={setEmail} onPassword={setPassword} onHistoryDays={setHistoryDays}
+      onLocalConsent={() => setLocalConsent(!localConsent)} onUploadConsent={() => setConsent(!consent)}
+      onStart={startLocally} onSync={connectServer} onLogout={logout} onPermission={openPermission}
+      onDashboard={() => { setSettings(false); setShowSignIn(false); }} /> : session && status?.connected ? <ScrollView contentContainerStyle={styles.content}>
       {collectionPanel}
       <View style={styles.syncBar}>
         <Text style={styles.cardTitle}>{status.enabled ? 'Hourly uploads enabled' : 'Uploads paused'}</Text>

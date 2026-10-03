@@ -1,49 +1,26 @@
 package com.forma.datasync.sync
 
-import android.app.Activity
-import android.content.Intent
-import android.net.Uri
-import android.os.Build
-import android.provider.Settings
 import com.facebook.react.bridge.Arguments
-import com.facebook.react.bridge.BaseActivityEventListener
 import com.facebook.react.bridge.Promise
 import com.facebook.react.bridge.ReactApplicationContext
 import com.facebook.react.bridge.ReactContextBaseJavaModule
 import com.facebook.react.bridge.ReactMethod
 import com.facebook.react.bridge.WritableArray
 import com.facebook.react.bridge.WritableMap
-import com.facebook.react.modules.core.PermissionAwareActivity
-import com.facebook.react.modules.core.PermissionListener
 import com.forma.datasync.BuildConfig
-import com.forma.datasync.collectors.HealthPermissions
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
 
 class FormaDataSyncModule(private val context: ReactApplicationContext) : ReactContextBaseJavaModule(context) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val engine = SyncEngine(context)
-    private var runtimePromise: Promise? = null
-    private var healthPromise: Promise? = null
-
-    private val activityListener = object : BaseActivityEventListener() {
-        override fun onActivityResult(activity: Activity, requestCode: Int, resultCode: Int, data: Intent?) {
-            if (requestCode != HEALTH_REQUEST) return
-            val promise = healthPromise ?: return
-            healthPromise = null
-            // Reading actual granted permissions also handles denial, cancellation and permission changes.
-            resolve(promise) { PermissionStatus.read(context) }
-        }
-    }
-
-    init { context.addActivityEventListener(activityListener) }
+    private val permissionRequests = PermissionRequestCoordinator(context)
     override fun getName() = "FormaDataSync"
     override fun getConstants(): Map<String, Any> = mapOf(
         "allowLanHttp" to BuildConfig.ALLOW_LAN_HTTP,
@@ -114,92 +91,19 @@ class FormaDataSyncModule(private val context: ReactApplicationContext) : ReactC
     @ReactMethod fun resumeCollection(promise: Promise) = resolve(promise) { engine.resumeCollection() }
     @ReactMethod fun logout(promise: Promise) = resolve(promise) { engine.logout(); null }
 
-    @ReactMethod fun openUsageSettings(promise: Promise) = openSettings(promise,
-        Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS, Uri.parse("package:${context.packageName}")))
-
-    @ReactMethod fun openBatterySettings(promise: Promise) = openSettings(promise,
-        Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
-
-    @ReactMethod fun openHealthSettings(promise: Promise) = resolve(promise) {
-        withContext(Dispatchers.Main) { launchSettings(HealthPermissions.settingsIntent(context)) }
-        null
-    }
-
-    @ReactMethod fun openBackgroundLocationSettings(promise: Promise) = resolve(promise) {
-        withContext(Dispatchers.Main) {
-            // Android 11+ requires the user to select "Allow all the time" in app settings.
-            // On Android 10 the separate background permission has its own system dialog.
-            if (Build.VERSION.SDK_INT == 29) requestRuntimeOnMain(promise,
-                arrayOf(android.Manifest.permission.ACCESS_BACKGROUND_LOCATION))
-            else launchSettings(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
-                Uri.parse("package:${context.packageName}")))
-        }
-        if (Build.VERSION.SDK_INT == 29) DeferredResult else null
-    }
-
-    @ReactMethod fun requestRuntimePermissions(promise: Promise) = resolve(promise) {
-        val requested = PermissionStatus.runtimePermissions(context)
-        if (requested.isEmpty()) return@resolve PermissionStatus.read(context)
-        withContext(Dispatchers.Main) { requestRuntimeOnMain(promise, requested) }
-        DeferredResult
-    }
-
-    @ReactMethod fun requestHealthPermissions(promise: Promise) = resolve(promise) {
-        val requested = HealthPermissions.requestedPermissions(context)
-        require(requested.isNotEmpty()) { "Health Connect is unavailable. Install or update Health Connect, then try again." }
-        withContext(Dispatchers.Main) {
-            check(healthPromise == null) { "A health permission request is already open." }
-            val activity = context.currentActivity ?: throw IllegalStateException("Open the app to request permissions.")
-            val intent = HealthPermissions.permissionContract().createIntent(activity, requested)
-            healthPromise = promise
-            try {
-                @Suppress("DEPRECATION")
-                activity.startActivityForResult(intent, HEALTH_REQUEST)
-            } catch (error: Exception) {
-                healthPromise = null
-                throw error
-            }
-        }
-        DeferredResult
-    }
-
-    private fun requestRuntimeOnMain(promise: Promise, requested: Array<String>) {
-        check(runtimePromise == null) { "A device permission request is already open." }
-        val activity = context.currentActivity as? PermissionAwareActivity
-            ?: throw IllegalStateException("Open the app to request permissions.")
-        runtimePromise = promise
-        try {
-            activity.requestPermissions(requested, RUNTIME_REQUEST, PermissionListener { requestCode, _, _ ->
-                if (requestCode != RUNTIME_REQUEST) false else {
-                    val pending = runtimePromise
-                    runtimePromise = null
-                    if (pending != null) resolve(pending) { PermissionStatus.read(context) }
-                    true
-                }
-            })
-        } catch (error: Exception) {
-            runtimePromise = null
-            throw error
-        }
-    }
-
-    private fun openSettings(promise: Promise, intent: Intent) = resolve(promise) {
-        withContext(Dispatchers.Main) { launchSettings(intent) }
-        null
-    }
-
-    private fun launchSettings(intent: Intent) {
-        val activity = context.currentActivity ?: throw IllegalStateException("Open the app to change permissions.")
-        if (intent.resolveActivity(context.packageManager) != null) activity.startActivity(intent)
-        else activity.startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
-            Uri.parse("package:${context.packageName}")))
-    }
+    @ReactMethod fun requestCollectionPermissions(promise: Promise) = resolve(promise) { permissionRequests.collection() }
+    @ReactMethod fun openUsageSettings(promise: Promise) = resolve(promise) { permissionRequests.usage() }
+    @ReactMethod fun openBatterySettings(promise: Promise) = resolve(promise) { permissionRequests.battery() }
+    @ReactMethod fun openHealthSettings(promise: Promise) = resolve(promise) { permissionRequests.healthSettings() }
+    @ReactMethod fun openBackgroundLocationSettings(promise: Promise) = resolve(promise) { permissionRequests.background() }
+    @ReactMethod fun requestRuntimePermissions(promise: Promise) = resolve(promise) { permissionRequests.runtime() }
+    @ReactMethod fun requestHealthPermissions(promise: Promise) = resolve(promise) { permissionRequests.health() }
 
     private fun resolve(promise: Promise, action: suspend () -> Any?) {
         scope.launch {
             try {
                 val result = action()
-                if (result !== DeferredResult) promise.resolve(toBridge(result))
+                promise.resolve(toBridge(result))
             } catch (error: CancellationException) {
                 promise.reject("E_CANCELLED", "The operation was cancelled.")
                 throw error
@@ -214,11 +118,7 @@ class FormaDataSyncModule(private val context: ReactApplicationContext) : ReactC
     }
 
     override fun invalidate() {
-        context.removeActivityEventListener(activityListener)
-        runtimePromise?.reject("E_CANCELLED", "The permission request was cancelled.")
-        healthPromise?.reject("E_CANCELLED", "The permission request was cancelled.")
-        runtimePromise = null
-        healthPromise = null
+        permissionRequests.close()
         scope.cancel()
         super.invalidate()
     }
@@ -257,9 +157,4 @@ class FormaDataSyncModule(private val context: ReactApplicationContext) : ReactC
         }
     }
 
-    private object DeferredResult
-    companion object {
-        private const val RUNTIME_REQUEST = 7431
-        private const val HEALTH_REQUEST = 7432
-    }
 }

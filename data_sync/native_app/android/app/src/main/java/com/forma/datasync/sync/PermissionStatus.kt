@@ -34,8 +34,13 @@ object PermissionStatus {
     }
 
     fun runtimePermissions(context: Context): Array<String> {
-        val permissions = mutableListOf(Manifest.permission.READ_CALENDAR,
-            Manifest.permission.ACCESS_COARSE_LOCATION, Manifest.permission.ACCESS_FINE_LOCATION)
+        val permissions = mutableListOf(Manifest.permission.READ_CALENDAR)
+        // Approximate foreground location is sufficient. Ask for coarse/fine together only
+        // when no foreground permission exists; Android 12+ requires them in one request.
+        if (!granted(context, Manifest.permission.ACCESS_COARSE_LOCATION) && !granted(context, Manifest.permission.ACCESS_FINE_LOCATION)) {
+            permissions.add(Manifest.permission.ACCESS_COARSE_LOCATION)
+            permissions.add(Manifest.permission.ACCESS_FINE_LOCATION)
+        }
         if (Build.VERSION.SDK_INT >= 29) permissions.add(Manifest.permission.ACTIVITY_RECOGNITION)
         if (Build.VERSION.SDK_INT >= 33) permissions.add(Manifest.permission.POST_NOTIFICATIONS)
         // Background location must be requested separately, after a foreground location grant.

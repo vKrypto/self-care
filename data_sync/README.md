@@ -1,9 +1,11 @@
 # Android data sync: build and install an APK
 
 The Android app and companion server live in [`native_app/`](native_app/).
-The app lets you skip login and collect permitted Android data locally. Sign in
-to an existing Forma account and connect a server to upload queued data in the
-background. **Open website** opens the current dashboard in your phone's browser.
+Android `0.3.7` has two setup steps: **Start collecting data** on the phone, then
+optional **Sync to server**. Local collection needs no login or server. Sign in
+to an existing Forma account and accept upload consent in the second card to
+upload queued data in the background. **Open website** opens the current
+dashboard in your phone's browser.
 See the [app README](native_app/README.md) for collectors, permissions, and the
 upload contract.
 
@@ -22,10 +24,10 @@ source metadata, actual paginated records, and original JSON exports. Removal
 requires confirmation and deletes its server history and daily summaries while
 blocking uploads for the removed identifier; local phone records remain there.
 
-Android `0.3.6` supports reconnecting the same phone after removal. Update the app
+Android `0.3.7` supports reconnecting the same phone after removal. Update the app
 with `adb install -r` or choose **Update** to preserve its local data. When the app
 shows **Previous connection removed**, choose **Reconnect & review upload consent**
-and approve **Create new connection & enable uploads**. Earlier batches assigned
+and approve upload consent in the **Sync to server** card. Earlier batches assigned
 to the removed connection stay local; new and unassigned data can upload to the
 new connection. A login or restart does not automatically reconnect the phone.
 
@@ -56,16 +58,16 @@ These are local build artifacts and are excluded from Git.
 
 ### Choose a smaller APK
 
-Version `0.3.5` builds a separate APK for each CPU architecture, plus a universal
-APK. The LAN builds have these measured download sizes:
+Version `0.3.7` builds a separate APK for each CPU architecture, plus a universal
+APK. The last measured `0.3.6` LAN builds had these download sizes:
 
 | Device architecture | APK | Size |
 | --- | --- | --- |
 | ARM64 (`arm64-v8a`) | [ARM64 LAN APK](apk/forma-data-sync-lan-preview-arm64-v8a.apk) | 6.69 MB |
 | 32-bit ARM (`armeabi-v7a`) | [ARM LAN APK](apk/forma-data-sync-lan-preview-armeabi-v7a.apk) | 6.14 MB |
-| 64-bit x86 (`x86_64`) | [x86_64 LAN APK](apk/forma-data-sync-lan-preview-x86_64.apk) | 6.79 MB |
+| 64-bit x86 (`x86_64`) | [x86_64 LAN APK](apk/forma-data-sync-lan-preview-x86_64.apk) | 6.80 MB |
 | 32-bit x86 (`x86`) | [x86 LAN APK](apk/forma-data-sync-lan-preview-x86.apk) | 7.10 MB |
-| All four architectures | [Universal LAN APK](apk/forma-data-sync-lan-preview.apk) | 19.06 MB |
+| All four architectures | [Universal LAN APK](apk/forma-data-sync-lan-preview.apk) | 19.07 MB |
 
 Sizes use decimal MB. The previous universal APK was 51.98 MB. The connected
 Android test device uses `x86_64`; its APK is about 87% smaller. To identify your
@@ -108,12 +110,29 @@ use the same app ID and local signing key, so an update preserves the login,
 collection permissions, settings, queued records, and sync history. Uninstalling
 or clearing app storage deletes local records; neither is needed for this update.
 
-Open **Forma Data Sync Preview** and choose **Skip login** to start local
-collection. Complete permission onboarding and choose your history range; no
-server is required. You can sign in later with a reachable **HTTPS server
-origin** (for example, `https://forma.example.com`) and your Forma email and
-password, then accept upload consent to connect. This APK includes its JavaScript
-bundle and runs without a Metro development server.
+Open **Forma Data Sync Preview**. In the first setup card, choose your history
+range, accept local collection consent, and tap **Start collecting data**.
+The app opens required Android dialogs and settings one at a time. **Usage
+Access** is required for app usage, screen events, and network usage: enable
+Forma on that Android settings screen and return to the app. If it remains
+disabled, the setup shows what to grant and lets you retry. Each compact
+permission row has a status, a permission action, and an info icon with the
+exact data and a short reason for access.
+
+Calendar, location, activity recognition, notifications, Health Connect,
+background location, and battery settings are checked where supported. These
+are optional: denied access skips that source while granted sources collect.
+Foreground location is requested before background location. If Health Connect
+is unavailable, automatic setup skips it and its row offers an install/settings
+link. Android requires the user to approve special access on its own settings
+screens; the app cannot enable it silently.
+
+The second card, **Sync to server**, is optional. Enter a reachable **HTTPS
+server origin** (for example, `https://forma.example.com`) and your Forma email
+and password, sign in, then accept the separate upload consent and tap **Sync
+to server**. This action also runs permission checks before connecting. Signing
+in alone or using the first card does not enable uploads. This APK includes its
+JavaScript bundle and runs without a Metro development server.
 
 For a server on the same local network, install the standalone
 [`apk/forma-data-sync-lan-preview.apk`](apk/forma-data-sync-lan-preview.apk)
