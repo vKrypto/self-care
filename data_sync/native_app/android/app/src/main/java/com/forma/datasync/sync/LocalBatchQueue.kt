@@ -28,6 +28,7 @@ class LocalBatchQueue(
         val modified: Long,
         val serverUrl: String?,
         val userId: String?,
+        val deviceId: String,
         val collectionEpoch: Long,
         val cursors: Map<String, Long>,
     )
@@ -115,17 +116,20 @@ class LocalBatchQueue(
         files().firstOrNull { fileBatchId(it) == batchId }?.let(::read)
     }
 
-    fun stats(serverUrl: String? = null, userId: String? = null): JSONObject = synchronized(lock) {
+    fun stats(serverUrl: String? = null, userId: String? = null, deviceId: String? = null): JSONObject = synchronized(lock) {
         val files = files()
         var waiting = 0
+        var waitingConnection = 0
         for (file in files) {
             val metadata = metadata(file)
             if (metadata.serverUrl != null && (metadata.serverUrl != serverUrl || metadata.userId != userId)) waiting++
+            else if (metadata.serverUrl != null && deviceId != null && metadata.deviceId != deviceId) waitingConnection++
         }
         JSONObject()
             .put("queuedBatches", files.size)
             .put("queuedBytes", files.sumOf { it.length() })
             .put("waitingAccountBatches", waiting)
+            .put("waitingConnectionBatches", waitingConnection)
             .put("storageLimitBytes", limitBytes)
     }
 
@@ -193,7 +197,7 @@ class LocalBatchQueue(
         val updates = batch.optJSONObject("cursorUpdates")
         val cursors = updates?.keys()?.asSequence()?.associateWith { updates.getLong(it) } ?: emptyMap()
         return Metadata(file.length(), file.lastModified(), owner?.getString("serverUrl"),
-            owner?.getString("userId"), batch.optLong("collectionEpoch", 0), cursors)
+            owner?.getString("userId"), batch.getJSONObject("payload").optString("device_id"), batch.optLong("collectionEpoch", 0), cursors)
     }
 
     private fun owner(batch: JSONObject): JSONObject? {

@@ -26,6 +26,7 @@ class SyncBatchPolicyTest {
         assertEquals(SyncBatchPolicy.Decision.STOP, SyncBatchPolicy.decide(pending(), state().put("enabled", false), access()))
         assertEquals(SyncBatchPolicy.Decision.STOP, SyncBatchPolicy.decide(pending(), state().apply { remove("token") }, access()))
         assertEquals(SyncBatchPolicy.Decision.STOP, SyncBatchPolicy.decide(pending(), state().put("connected", false), access()))
+        assertEquals(SyncBatchPolicy.Decision.STOP, SyncBatchPolicy.decide(pending(), state().put("connectionRemoved", true), access()))
     }
 
     @Test fun anOwnedBatchCannotCrossServersWithTheSameUserId() {

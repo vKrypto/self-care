@@ -79,8 +79,8 @@ class SecureStore(context: Context) {
 
     fun removeLocal(batchId: String) = synchronized(lock) { localQueue.remove(batchId) }
 
-    fun localStats(serverUrl: String? = null, userId: String? = null): JSONObject = synchronized(lock) {
-        localQueue.stats(serverUrl, userId)
+    fun localStats(serverUrl: String? = null, userId: String? = null, deviceId: String? = null): JSONObject = synchronized(lock) {
+        localQueue.stats(serverUrl, userId, deviceId)
     }
 
     fun recoverLocalCursors(collectionEpoch: Long = 0): JSONObject = synchronized(lock) {

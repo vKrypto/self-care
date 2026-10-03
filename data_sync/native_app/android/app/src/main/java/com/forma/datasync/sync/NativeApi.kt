@@ -38,6 +38,7 @@ class NativeApi(private val serverUrl: String, private val token: String? = null
                 if (code !in 200..299) throw ApiException(code, when (code) {
                     401 -> "Session expired. Sign in again to resume syncing."
                     403 -> "The server denied this request. Check your account permissions."
+                    410 -> "This device connection was removed from your account. Review upload consent to reconnect."
                     413 -> "This data batch is larger than the server accepts."
                     429 -> "The server is busy. Sync will retry later."
                     in 300..399 -> "The server redirected this request. Check the server URL."

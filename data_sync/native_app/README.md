@@ -6,6 +6,12 @@ companion entry point for the existing Forma server. Phase 4 adds account-owned
 device history and Digital wellbeing to the web dashboard, using the collector's
 existing export contract. iOS is deferred.
 
+Version `0.3.6` adds recovery for a device removed from the website. The app stops
+uploads for that connection and keeps collecting locally. Review upload consent
+to create a new connection without clearing the app's storage or local history.
+Queued data assigned to the removed connection remains local; fresh and
+unassigned collections can upload through the new connection.
+
 For tool installation, platform-specific build commands, and APK installation,
 see the [Android APK build guide](../README.md). The generated standalone test
 APK is available at [`../apk/forma-data-sync-preview.apk`](../apk/forma-data-sync-preview.apk).
@@ -186,6 +192,14 @@ after a direct Gradle build.
    its sources, records, collected time windows and upload receipts. This works
    locally without signing in; successfully uploaded records remain viewable
    within the local history retention limits described below.
+7. Removing a device in the website's **Connected devices** tab disconnects that
+   upload identity. Version `0.3.6` recognizes removal from the server's device
+   list or a rejected upload. **Reconnect & review upload consent** opens settings;
+   approving **Create new connection & enable uploads** registers a new identity.
+   A failed registration keeps the prior identity and data. Signing in, restarting,
+   or pressing **Resume uploads** does not bypass removal. Batches for the previous
+   connection remain in **Sync history**, use local queue storage, and are counted
+   separately from batches eligible for the current connection.
 
 The schedule runs **on the Android device**, because a server cron cannot wake a
 phone and access its local usage APIs. WorkManager persists jobs across process

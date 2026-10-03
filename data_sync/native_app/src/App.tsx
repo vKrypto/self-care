@@ -197,6 +197,7 @@ function Content() {
 
   const screen = collectionScreen(session, status, settings, showSignIn);
   const onboarding = screen === 'onboarding';
+  const connectionRemoved = !!status?.connectionRemoved;
   const openSettings = () => { setHistoryDays(String(status?.historyDays ?? 30)); setConsent(false); setLocalConsent(false); setSettings(true); setShowSignIn(false); };
   const openSignIn = () => { setSettings(false); setConsent(false); setLocalConsent(false); setShowSignIn(true); setError(''); };
   const healthGranted = (permissions?.health.granted_permissions ?? []).length > 0;
@@ -207,6 +208,7 @@ function Content() {
     <Text style={styles.hint}>{status?.lastCollectedAt ? `Last collection: ${new Date(status.lastCollectedAt).toLocaleString()}` : 'Waiting for the first collection'}</Text>
     <Text style={styles.body}>{status?.queuedBatches ?? 0} batches saved on this device · {readableBytes(status?.queuedBytes ?? 0)} / {readableBytes(status?.storageLimitBytes ?? 0)}</Text>
     {!!status?.waitingAccountBatches && <Text style={styles.hint}>{status.waitingAccountBatches} batches are assigned to {session ? 'another account' : 'an account'}. Reconnect the original account to upload them.</Text>}
+    {!!status?.waitingConnectionBatches && <Text style={styles.hint}>{status.waitingConnectionBatches} batches belong to a previous connection. Their records remain in Sync history and are not uploaded by this connection.</Text>}
     {!!status?.collectionError && <Text accessibilityRole="alert" style={styles.errorText}>{status.collectionError}</Text>}
     <View style={styles.row}>
       <Button title={manualOperation === 'collect' ? 'Collecting…' : 'Collect now'} secondary
@@ -254,13 +256,14 @@ function Content() {
         <Text style={styles.hint}>Your password is used once to sign in. A protected session token authenticates future uploads. Signing in asks for your consent before connecting local data.</Text>
       </ScrollView>
     </KeyboardAvoidingView> : onboarding ? <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
-      <Text style={styles.kicker}>{session ? 'SERVER CONNECTION' : 'LOCAL COLLECTION'}</Text><Text style={styles.title}>{session ? 'Connect your data.' : 'Keep your day locally.'}</Text>
+      <Text style={styles.kicker}>{session ? 'SERVER CONNECTION' : 'LOCAL COLLECTION'}</Text><Text style={styles.title}>{session ? connectionRemoved ? 'Reconnect your device.' : 'Connect your data.' : 'Keep your day locally.'}</Text>
       <Text style={styles.body}>{session ? 'Connect this device and its unassigned local data to your signed-in Forma account. Android asks you to approve each source; only granted sources are collected and uploaded.' : 'Android asks you to approve each source. Granted data is stored encrypted on this device. You can sign in and choose to upload it later.'}</Text>
       <View style={styles.card}>
         {session && <>
           <Text style={styles.label}>Upload server</Text><Text style={styles.body}>{session.serverUrl}</Text>
           {session.serverUrl.startsWith('http:') && <Text style={styles.errorText}>{HTTP_NOTICE}</Text>}
           <Text style={styles.hint}>Signed in as {session.user.email}. Data assigned to another account stays on this device and will only upload when that account reconnects.</Text>
+          {connectionRemoved && <Text style={styles.body}>Your previous connection was removed from this account. Creating a new connection uploads future collections and unassigned local data after you approve. Batches assigned to the removed connection stay on this phone and will not be uploaded to the new connection.</Text>}
         </>}
         <Text style={styles.label}>Initial history (days)</Text>
         <TextInput accessibilityLabel="Initial history days" value={historyDays} onChangeText={setHistoryDays} style={styles.input} keyboardType="number-pad" maxLength={3} />
@@ -283,7 +286,7 @@ function Content() {
         {session && <Pressable accessibilityRole="checkbox" accessibilityState={{checked: consent, disabled: busy}} disabled={busy} onPress={() => setConsent(!consent)} style={styles.consent}>
           <Text style={styles.checkbox}>{consent ? '☑' : '☐'}</Text><Text style={[styles.body, styles.flex]}>{CONSENT}</Text>
         </Pressable>}
-        <Button title={session ? 'Connect account & enable uploads' : status?.onboarded ? 'Save local collection settings' : 'Start local collection'}
+        <Button title={session ? connectionRemoved ? 'Create new connection & enable uploads' : 'Connect account & enable uploads' : status?.onboarded ? 'Save local collection settings' : 'Start local collection'}
           disabled={busy || (session ? !consent || (!status?.onboarded && !localConsent) : !localConsent)} onPress={submitOnboarding} />
         {session && !status?.onboarded && <Button title="Collect locally without connecting" secondary disabled={busy || !localConsent} onPress={startLocally} />}
       </View>
@@ -310,11 +313,11 @@ function Content() {
       <Text style={styles.body}>Granted sources are collected into an encrypted queue on this device. Collection continues without a server connection; available history is retried after interruptions.</Text>
       <View style={styles.card}>{collectionPanel}</View>
       <View style={styles.card}>
-        <Text style={styles.cardTitle}>Connect when you are ready</Text>
-        <Text style={styles.body}>{session ? `Signed in as ${session.user.email}. Choose to connect this device before local data uploads to ${session.serverUrl}.` : 'Sign in to your Forma server and review upload consent to send saved data to it.'}</Text>
+        <Text style={styles.cardTitle}>{connectionRemoved ? 'Previous connection removed' : 'Connect when you are ready'}</Text>
+        <Text style={styles.body}>{connectionRemoved ? 'This device was removed from your server account. Local collection and history remain available. Review upload consent to create a new connection; previously assigned batches remain on this phone.' : session ? `Signed in as ${session.user.email}. Choose to connect this device before local data uploads to ${session.serverUrl}.` : 'Sign in to your Forma server and review upload consent to send saved data to it.'}</Text>
         {status?.authRequired && <Text style={styles.errorText}>Your server session expired. Sign in again to resume uploads.</Text>}
         {!!status?.lastError && <Text style={styles.hint}>{status.lastError}</Text>}
-        <Button title={session ? 'Connect account & review upload consent' : 'Sign in to sync'} disabled={busy}
+        <Button title={session ? connectionRemoved ? 'Reconnect & review upload consent' : 'Connect account & review upload consent' : 'Sign in to sync'} disabled={busy}
           onPress={session ? openSettings : openSignIn} />
         {session && <Button title="Sign out · keep collecting locally" secondary disabled={busy} onPress={logout} />}
       </View>

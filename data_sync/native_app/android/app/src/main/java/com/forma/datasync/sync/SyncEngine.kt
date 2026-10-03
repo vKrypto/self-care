@@ -28,11 +28,24 @@ class SyncEngine(context: Context) {
         } ?: return null
         var refreshedUser: JSONObject? = null
         var unauthorized = false
+        var connectionMissing = false
         // Account validation must not hold the collection mutex while an offline request times out.
         try {
             val result = api(snapshot).request("/api/native/me")
             val user = result.optJSONObject("user") ?: result
             if (user.has("id")) refreshedUser = user
+            if (snapshot.optBoolean("connected") && !snapshot.optBoolean("connectionRemoved") &&
+                user.optString("id") == snapshot.optJSONObject("user")?.optString("id")) {
+                try {
+                    connectionMissing = CollectionStatePolicy.missingFromServerStatus(snapshot,
+                        api(snapshot).request("/api/native/status"))
+                } catch (error: CancellationException) {
+                    throw error
+                } catch (_: Exception) {
+                    // Optional connection validation must not infer deletion from
+                    // an offline server, an error, or a malformed JSON response.
+                }
+            }
         } catch (error: ApiException) {
             unauthorized = error.status == 401
         } catch (_: IOException) {
@@ -47,6 +60,11 @@ class SyncEngine(context: Context) {
                     return@withLock null
                 }
                 if (refreshedUser != null) current = store.update { it.put("user", refreshedUser) }
+                if (connectionMissing && current.optString("deviceId") == snapshot.optString("deviceId") &&
+                    current.optJSONObject("user")?.optString("id") == snapshot.optJSONObject("user")?.optString("id")) {
+                    connectionRemoved(snapshot)
+                    current = store.read()
+                }
             }
             if (current.optString("token").isNotBlank()) session(current) else null
         }
@@ -87,19 +105,29 @@ class SyncEngine(context: Context) {
         localState()
         val state = authenticatedState()
         requireUsageAccess()
+        val registrationDeviceId = CollectionStatePolicy.registrationDeviceId(state)
         try {
-            api(state).request("/api/native/devices", JSONObject()
-                .put("device_id", state.getString("deviceId"))
+            val acknowledgment = api(state).request("/api/native/devices", JSONObject()
+                .put("device_id", registrationDeviceId)
                 .put("platform", "android")
                 .put("name", "${Build.MANUFACTURER} ${Build.MODEL}")
                 .put("sync_interval_minutes", 60).put("consent_version", "1").put("history_days", historyDays))
+            check(acknowledgment.optString("device_id") == registrationDeviceId) {
+                "The server did not confirm this device registration."
+            }
         } catch (error: ApiException) {
             if (error.status == 401) invalidateAuth()
+            if (error.status == 410) connectionRemoved(state)
             throw error
         }
         val current = store.update {
+            check(it.optString("token") == state.optString("token") && it.optString("serverUrl") == state.optString("serverUrl") &&
+                it.optString("deviceId") == state.optString("deviceId") &&
+                it.optJSONObject("user")?.optString("id") == state.optJSONObject("user")?.optString("id")) {
+                "The signed-in account changed before registration completed. Sign in and connect again."
+            }
             CollectionStatePolicy.configureCollection(it, historyDays, System.currentTimeMillis())
-            it.put("connected", true).put("enabled", true).remove("lastError")
+            CollectionStatePolicy.completeRegistration(it, registrationDeviceId)
         }
         restoreSchedules(current)
         CollectionScheduler.enqueue(appContext)
@@ -110,12 +138,13 @@ class SyncEngine(context: Context) {
     fun status(): JSONObject {
         val state = localState()
         val stats = store.localStats(state.optString("serverUrl").takeIf { it.isNotBlank() },
-            state.optJSONObject("user")?.optString("id"))
+            state.optJSONObject("user")?.optString("id"), state.optString("deviceId").takeIf { it.isNotBlank() })
         return stats
             .put("enabled", CollectionStatePolicy.canUpload(state))
             .put("collectionEnabled", CollectionStatePolicy.canCollect(state))
             .put("onboarded", state.optBoolean("onboarded"))
-            .put("connected", state.optBoolean("connected") && state.optString("token").isNotBlank())
+            .put("connected", !state.optBoolean("connectionRemoved") && state.optBoolean("connected") && state.optString("token").isNotBlank())
+            .put("connectionRemoved", state.optBoolean("connectionRemoved"))
             .put("authRequired", state.has("user") && state.optString("token").isBlank())
             .put("lastSyncAt", state.opt("lastSyncAt") ?: JSONObject.NULL)
             .put("lastCollectedAt", state.opt("lastCollectedAt") ?: JSONObject.NULL)
@@ -143,7 +172,7 @@ class SyncEngine(context: Context) {
 
     fun resume(): JSONObject {
         val state = authenticatedState()
-        check(state.optBoolean("connected")) { "Connect this account before enabling sync." }
+        check(state.optBoolean("connected") && !state.optBoolean("connectionRemoved")) { "Connect this account before enabling sync." }
         store.update { it.put("enabled", true).remove("lastError") }
         SyncScheduler.schedule(appContext)
         SyncScheduler.enqueue(appContext)
@@ -493,9 +522,13 @@ class SyncEngine(context: Context) {
         } catch (error: ApiException) {
             uploadingBatchId?.let { store.markLocalUploadError(it,
                 if (error.status == 401) "Session expired. Sign in again to upload this batch."
+                else if (error.status == 410) "This connection was removed from the server. This batch remains on the phone and cannot be reassigned to a new connection."
                 else "The server could not accept this upload. This batch is retained locally.") }
             if (error.status == 401) {
                 invalidateAuth()
+                false
+            } else if (error.status == 410) {
+                connectionRemoved(initial)
                 false
             } else {
                 store.update { it.put("lastError", error.message) }
@@ -557,6 +590,15 @@ class SyncEngine(context: Context) {
 
     private fun invalidateAuth() {
         store.update { it.remove("token"); it.put("lastError", "Session expired. Collection continues locally; sign in again to resume syncing.") }
+        SyncScheduler.cancel(appContext)
+    }
+
+    private fun connectionRemoved(rejectedConnection: JSONObject) {
+        store.update {
+            CollectionStatePolicy.markConnectionRemoved(it, rejectedConnection)
+            if (it.optBoolean("connectionRemoved")) it.put("lastError",
+                "This connection was removed from the server. Collection continues locally; explicitly create a new connection to upload new data.")
+        }
         SyncScheduler.cancel(appContext)
     }
 

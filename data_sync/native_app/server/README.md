@@ -220,6 +220,13 @@ facts and remain available after their original raw batch expires, within the
 derived limits. Source record counts describe the latest read for a day; weekly
 source counts are daily observations rather than unique raw record counts.
 Health rereads update source IDs/revisions; they do not multiply repeated totals.
+
+The Android `0.3.6` collector recognizes account-side device removal from its
+authenticated device list or a 410 response. It stops uploads for that connection
+and retains local collection, cursors, and history. Reconnection requires the
+app's explicit upload-consent step and registers a new UUID; queued batches tied
+to the removed UUID remain local and are not reassigned to the new connection.
+This client recovery leaves the server's old-UUID revocation in place.
 The Android app's rolling reread still does not provide a complete deletion/change
 feed for older provider records.
 

@@ -216,6 +216,40 @@ class LocalBatchQueueTest {
         assertEquals(id(blocked), id(queue(directory).next(server, user, device)!!))
     }
 
+    @Test fun reconnectingCountsOldConnectionBatchesWithoutReassigningTheirPayloads() {
+        val directory = temporary.newFolder()
+        val outbox = queue(directory)
+        val removed = batch(owner = owner())
+        val original = removed.toString()
+        val freshDevice = "new-device-identity"
+        val current = batch(owner = owner()).apply { getJSONObject("payload").put("device_id", freshDevice) }
+        val guest = batch()
+        outbox.append(removed)
+        outbox.append(current)
+        outbox.append(guest)
+        outbox.append(batch(owner = owner(userId = "another-account")))
+        outbox.append(batch(owner = owner(serverUrl = "https://another.example")))
+
+        val stats = outbox.stats(server, user, freshDevice)
+        assertEquals(5, stats.getInt("queuedBatches"))
+        assertEquals(1, stats.getInt("waitingConnectionBatches"))
+        assertEquals(2, stats.getInt("waitingAccountBatches"))
+        assertEquals(0, outbox.stats(server, user).getInt("waitingConnectionBatches"))
+        assertEquals(0, outbox.stats().getInt("waitingConnectionBatches"))
+
+        val selected = outbox.next(server, user, freshDevice)!!
+        assertEquals(id(current), id(selected))
+        outbox.remove(id(selected))
+        val claimedGuest = outbox.next(server, user, freshDevice)!!
+        assertEquals(id(guest), id(claimedGuest))
+        assertEquals(freshDevice, claimedGuest.getJSONObject("payload").getString("device_id"))
+        outbox.remove(id(claimedGuest))
+        assertNull(outbox.next(server, user, freshDevice))
+        assertEquals(original, outbox.readBatch(id(removed))!!.toString())
+        assertEquals(1, queue(directory).stats(server, user, freshDevice).getInt("waitingConnectionBatches"))
+        assertEquals(3, outbox.stats(server, user, freshDevice).getInt("queuedBatches"))
+    }
+
     @Test fun abnormallyLargeClaimCannotExceedStorageCapOrCorruptItsGuestRecord() {
         val directory = temporary.newFolder()
         val first = batch()

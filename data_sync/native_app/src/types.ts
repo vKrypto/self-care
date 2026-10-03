@@ -19,8 +19,10 @@ export interface SyncStatus {
   enabled: boolean; lastSyncAt: number | null; lastError: string | null;
   pending: boolean; historyDays: number; authRequired?: boolean;
   collectionEnabled: boolean; onboarded: boolean; connected: boolean;
+  connectionRemoved?: boolean;
   lastCollectedAt: number | null; collectionError: string | null;
   queuedBatches: number; queuedBytes: number; waitingAccountBatches: number;
+  waitingConnectionBatches?: number;
   storageLimitBytes: number;
 }
 export interface HistoryJob {

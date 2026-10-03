@@ -10,8 +10,8 @@ upload contract.
 ## Review synced data on the website
 
 Phase 4 adds **Connected devices** and **Digital wellbeing** to the Forma web
-sidebar. Keep your existing Android collector installed; this update needs a web
-build and server restart, with no APK rebuild or reinstall. Sign in on the phone,
+sidebar. These views use the existing collector's exports and need a web build
+and server restart. Sign in on the phone,
 connect it to the same server/account, accept upload consent, and tap **Sync now**.
 The app's **Open website** opens your browser, which has its own login session.
 
@@ -21,6 +21,13 @@ address and available APKs. Select a device to browse all retained receipts,
 source metadata, actual paginated records, and original JSON exports. Removal
 requires confirmation and deletes its server history and daily summaries while
 blocking uploads for the removed identifier; local phone records remain there.
+
+Android `0.3.6` supports reconnecting the same phone after removal. Update the app
+with `adb install -r` or choose **Update** to preserve its local data. When the app
+shows **Previous connection removed**, choose **Reconnect & review upload consent**
+and approve **Create new connection & enable uploads**. Earlier batches assigned
+to the removed connection stay local; new and unassigned data can upload to the
+new connection. A login or restart does not automatically reconnect the phone.
 
 **Digital wellbeing** organizes synced metrics by day and calendar week, with a
 device filter, app usage, screen/unlock events, network totals, and available
