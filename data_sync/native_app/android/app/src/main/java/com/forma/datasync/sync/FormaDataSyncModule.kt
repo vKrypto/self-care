@@ -94,6 +94,7 @@ class FormaDataSyncModule(private val context: ReactApplicationContext) : ReactC
     @ReactMethod fun requestCollectionPermissions(promise: Promise) = resolve(promise) { permissionRequests.collection() }
     @ReactMethod fun openUsageSettings(promise: Promise) = resolve(promise) { permissionRequests.usage() }
     @ReactMethod fun openBatterySettings(promise: Promise) = resolve(promise) { permissionRequests.battery() }
+    @ReactMethod fun openAppSettings(promise: Promise) = resolve(promise) { permissionRequests.appDetails() }
     @ReactMethod fun openHealthSettings(promise: Promise) = resolve(promise) { permissionRequests.healthSettings() }
     @ReactMethod fun openBackgroundLocationSettings(promise: Promise) = resolve(promise) { permissionRequests.background() }
     @ReactMethod fun requestRuntimePermissions(promise: Promise) = resolve(promise) { permissionRequests.runtime() }

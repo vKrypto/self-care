@@ -1,11 +1,13 @@
 # Android data sync: build and install an APK
 
 The Android app and companion server live in [`native_app/`](native_app/).
-Android `0.3.7` has two setup steps: **Start collecting data** on the phone, then
+Android `0.3.8` has two setup steps: **Start collecting data** on the phone, then
 optional **Sync to server**. Local collection needs no login or server. Sign in
 to an existing Forma account and accept upload consent in the second card to
 upload queued data in the background. **Open website** opens the current
-dashboard in your phone's browser.
+dashboard in your phone's browser. Each visit to **Set up your data** rechecks
+Android permissions and lists any that are missing; granting them all shows
+**All set, you can now start using the app** and opens the dashboard.
 See the [app README](native_app/README.md) for collectors, permissions, and the
 upload contract.
 
@@ -58,16 +60,16 @@ These are local build artifacts and are excluded from Git.
 
 ### Choose a smaller APK
 
-Version `0.3.7` builds a separate APK for each CPU architecture, plus a universal
-APK. The `0.3.7` LAN builds have these download sizes:
+Version `0.3.8` builds a separate APK for each CPU architecture, plus a universal
+APK. The `0.3.8` LAN builds have these download sizes:
 
 | Device architecture | APK | Size |
 | --- | --- | --- |
 | ARM64 (`arm64-v8a`) | [ARM64 LAN APK](apk/forma-data-sync-lan-preview-arm64-v8a.apk) | 6.70 MB |
-| 32-bit ARM (`armeabi-v7a`) | [ARM LAN APK](apk/forma-data-sync-lan-preview-armeabi-v7a.apk) | 6.14 MB |
+| 32-bit ARM (`armeabi-v7a`) | [ARM LAN APK](apk/forma-data-sync-lan-preview-armeabi-v7a.apk) | 6.15 MB |
 | 64-bit x86 (`x86_64`) | [x86_64 LAN APK](apk/forma-data-sync-lan-preview-x86_64.apk) | 6.80 MB |
 | 32-bit x86 (`x86`) | [x86 LAN APK](apk/forma-data-sync-lan-preview-x86.apk) | 7.11 MB |
-| All four architectures | [Universal LAN APK](apk/forma-data-sync-lan-preview.apk) | 19.07 MB |
+| All four architectures | [Universal LAN APK](apk/forma-data-sync-lan-preview.apk) | 19.08 MB |
 
 Sizes use decimal MB. The previous universal APK was 51.98 MB. The connected
 Android test device uses `x86_64`; its APK is about 87% smaller. To identify your

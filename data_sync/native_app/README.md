@@ -6,11 +6,17 @@ companion entry point for the existing Forma server. Phase 4 adds account-owned
 device history and Digital wellbeing to the web dashboard, using the collector's
 existing export contract. iOS is deferred.
 
-Version `0.3.7` uses two compact setup cards: **Start collecting data**, then
+Version `0.3.8` uses two compact setup cards: **Start collecting data**, then
 optional **Sync to server**. Primary actions request Android permissions in
 sequence. Permission rows show status and an action; info icons explain the
 exact data and a short reason for access. Login and local collection remain
 independent of upload consent.
+
+Phase 5 rechecks Android permissions each time **Set up your data** opens,
+because access can be revoked in system settings at any time. After collection
+starts, a card at the top of the page lists only the missing permissions, each
+with its own action. Granting the last one shows **All set, you can now start
+using the app** and opens the dashboard.
 
 The app also recovers a device removed from the website. It stops uploads for
 that connection and keeps collecting locally. Review upload consent to create
@@ -21,10 +27,10 @@ unassigned collections can upload through the new connection.
 For tool installation, platform-specific build commands, and APK installation,
 see the [Android APK build guide](../README.md). The generated standalone test
 APK is available at [`../apk/forma-data-sync-preview.apk`](../apk/forma-data-sync-preview.apk).
-Version `0.3.7` also exports smaller APKs for each architecture. See
-[Choose a smaller APK](../README.md#choose-a-smaller-apk). The `0.3.7` downloads
+Version `0.3.8` also exports smaller APKs for each architecture. See
+[Choose a smaller APK](../README.md#choose-a-smaller-apk). The `0.3.8` downloads
 are 6.70 MB for ARM64 LAN, 6.80 MB for the connected x86_64 test device, and
-19.07 MB for universal LAN, reduced from 51.98 MB.
+19.08 MB for universal LAN, reduced from 51.98 MB.
 
 ## Run the server
 
@@ -186,7 +192,18 @@ after a direct Gradle build.
    unique hourly Android WorkManager job with no network requirement. Local
    onboarding survives app restarts. The dashboard shows collection status,
    queue size, **Collect now**, and separate collection pause/resume controls.
-4. **Sync to server** is the second, optional setup card. Enter the server URL,
+4. Each time **Set up your data** opens, at first launch or from **Data settings**,
+   the app reads Android's current permission state again. After collection
+   starts, a card at the top lists only missing permissions, each with an action;
+   **Allow all** opens them in sequence when several are missing. When every
+   permission is granted and collection is set up, the app shows **All set, you
+   can now start using the app** and opens the dashboard. This also happens when
+   you grant the last permission in Android settings and return. If nothing was
+   missing when the page opened, it stays open so **Sync to server** remains
+   available. Declined permissions stay listed, and **Open dashboard** continues
+   without them. Health Connect counts as missing until every requested category
+   is allowed. A device without Health Connect support has nothing to grant.
+5. **Sync to server** is the second, optional setup card. Enter the server URL,
    email and password, accept separate upload consent, and press **Sync**. The
    action checks permissions, signs in if needed, registers the device and enables a
    separate hourly upload worker requiring a network. Signing in alone or
@@ -196,16 +213,17 @@ after a direct Gradle build.
    connection settings. **Open website** launches the configured server origin
    in the phone's external browser, with no token or password in the URL. The
    browser may ask you to sign in; its session is independent of the collector.
-5. Sign out in the app removes its native session and cancels uploads.
+   A successful connection with every permission granted also shows **All set**.
+6. Sign out in the app removes its native session and cancels uploads.
    Local collection and queued records remain. Native session expiry also
    stops uploads. Browser sign-out affects only the browser session; use the
    app's sign-out or upload pause control to stop the collector uploading.
    Pause collection explicitly to stop collecting.
-6. Open **Sync history** from either dashboard. Tap a collection job to review
+7. Open **Sync history** from either dashboard. Tap a collection job to review
    its sources, records, collected time windows and upload receipts. This works
    locally without signing in; successfully uploaded records remain viewable
    within the local history retention limits described below.
-7. Removing a device in the website's **Connected devices** tab disconnects that
+8. Removing a device in the website's **Connected devices** tab disconnects that
    upload identity. Version `0.3.7` recognizes removal from the server's device
    list or a rejected upload. **Reconnect & review upload consent** opens settings;
    approving upload consent and pressing **Sync** registers a new identity.
@@ -313,7 +331,12 @@ permission row to be opened manually. Already granted permissions are skipped.
 Usage Access is a special-access setting: Android requires the user to enable
 Forma there and return to the app; a runtime permission popup cannot grant it.
 Compact rows allow a denied permission to be retried later, and their info icons
-describe the exact data and purpose.
+describe the exact data and purpose. After repeated denials Android stops showing
+a permission's prompt, so the first tap can do nothing. The button then changes
+to **Settings**, which opens the app's Android **App info** page, or Health
+Connect settings for health categories, where the permission can still be granted.
+On Android 8–12, notifications turned off in system settings are also reported
+as missing; earlier versions treated them as allowed.
 
 Optional requests cover calendar, foreground location, activity recognition,
 notifications, supported Health Connect read categories, background location,
@@ -510,6 +533,24 @@ also completed local collection without a server connection. Updating the existi
 LAN app preserved its sign-in, server address, enabled hourly collection/uploads,
 and all 24 collection jobs. Existing job details remained readable, both compact
 setup cards displayed the saved status, and no fatal crash was recorded.
+
+Version `0.3.8` passed 97 Kotlin/JVM tests and 31 TypeScript tests, plus TypeScript
+checking and Android lint for both APK variants with zero errors. All ten APKs
+passed signing-certificate, version, checksum, ABI and compressed bundle checks.
+Android 15 checks used a separate app ID, leaving the installed LAN collector
+unchanged. With every other permission granted, first-launch **Start** prompted
+only for Calendar; allowing it showed **All set** and opened the dashboard.
+Reopening **Data settings** with everything granted showed **All permissions
+allowed** and stayed open through two refresh cycles. After Calendar was revoked
+in Android, reopening **Data settings** listed only Calendar. Granting it from the
+list returned to the dashboard with **All set**. With Calendar set to "don't ask
+again", **Allow** produced no prompt and the button changed to **Settings**. Granting
+Calendar in App info and returning completed setup. **Allow all** prompted for each
+missing permission in order, and declining Notifications kept the page open with
+two items still listed. Granting those in the background was detected on return.
+Revoking Location also listed Background location, with its action disabled until
+Location was allowed. The Android 8–12 notification check and the server
+connection notice were not exercised on a device.
 
 Further device validation should cover a real Android phone with populated usage and
 Health Connect data: skip login, complete local onboarding, collect in airplane

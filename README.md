@@ -241,7 +241,7 @@ The transport follows the official [Python SDK v1 documentation](https://py.sdk.
 
 ## Phase 3: Android data export and APK
 
-The Android app and companion server are in [`data_sync/native_app`](data_sync/native_app). Android `0.3.7` uses two compact setup cards: **Start collecting data**, then optional **Sync to server**. The collection action opens Android permission dialogs and settings in sequence; grant **Usage Access** on the system screen to collect app usage, screen events, and network usage. Each permission row has its status, an action, and an info icon explaining the data and why access is needed. Other permissions are optional: denied or unavailable sources remain labeled, and granted sources continue collecting. Local collection needs no account or server.
+The Android app and companion server are in [`data_sync/native_app`](data_sync/native_app). Android `0.3.8` uses two compact setup cards: **Start collecting data**, then optional **Sync to server**. The collection action opens Android permission dialogs and settings in sequence; grant **Usage Access** on the system screen to collect app usage, screen events, and network usage. Each permission row has its status, an action, and an info icon explaining the data and why access is needed. Other permissions are optional: denied or unavailable sources remain labeled, and granted sources continue collecting. Local collection needs no account or server.
 
 For **Sync to server**, enter a reachable server URL and an existing Forma account’s email and password, accept upload consent, then tap **Sync**. This action also checks collection permissions; signing in or starting local collection alone does not enable uploads. Hourly collection runs on the device through WorkManager, including while offline; uploads run separately when connected. **Open website** opens your configured server in the phone's browser. Uploads use a session token; the password is used only at login. Signing out stops uploads while local collection continues. Collection and upload schedules can be delayed by Android power management.
 
@@ -272,7 +272,7 @@ The companion serves `/api/native/*` and the built dashboard from one origin, us
 
 For a phone on the same trusted LAN, `npm run build:apk:lan` from `data_sync/native_app` exports `data_sync/apk/forma-data-sync-lan-preview.apk` and architecture-specific versions. This variant accepts HTTP to private IPv4 addresses such as `http://192.168.1.50:8000` and runs without Metro. HTTP does not encrypt credentials or uploaded data; regular preview and release builds still require HTTPS. Keep `COOKIE_SECURE=false` for local HTTP.
 
-Version `0.3.7` retains separate APKs for each architecture and a universal download. The `0.3.7` builds are 6.70 MB for ARM64, 6.80 MB for x86_64 (about 87% smaller than the previous 51.98 MB download), or 19.07 MB for universal compatibility. Builds also compress the Hermes bytecode bundle; Android decompresses it at startup instead of directly memory-mapping it, adding some startup work for a smaller download. Install with `adb install -r` or choose **Update** on the phone to preserve the existing preview app's login, settings, queued records, and history.
+Version `0.3.8` retains separate APKs for each architecture and a universal download. The `0.3.8` builds are 6.70 MB for ARM64, 6.80 MB for x86_64 (about 87% smaller than the previous 51.98 MB download), or 19.08 MB for universal compatibility. Builds also compress the Hermes bytecode bundle; Android decompresses it at startup instead of directly memory-mapping it, adding some startup work for a smaller download. Install with `adb install -r` or choose **Update** on the phone to preserve the existing preview app's login, settings, queued records, and history.
 
 See [`data_sync/README.md`](data_sync/README.md) for prerequisites, SDK setup, Windows commands, APK installation, and troubleshooting. See the [native app README](data_sync/native_app/README.md) for available data sources, permissions, API details, and verification commands.
 
@@ -299,6 +299,12 @@ npx playwright test tests/devices.spec.js
 ```
 
 Device tests cover account isolation, durable counters and retries, record pagination, expired raw records, daily/weekly aggregation, deletion/revocation, and both server entry points. Browser tests exercise connection setup, device/source history, daily/weekly views, and confirmed removal against isolated test data.
+
+## Phase 5: Permission check in Set up your data
+
+Android `0.3.8` rechecks permissions each time **Set up your data** opens, at first launch or from **Data settings**, because access can be revoked in Android settings while the app is closed. Once collection is set up, a card at the top of the page lists only the missing permissions, each with its own action; **Allow all** opens them in sequence. When every permission is granted, the app shows **All set, you can now start using the app** and opens the dashboard. This also happens when you grant the last permission in Android settings and return. If nothing is missing, the page stays open so **Sync to server** remains available. Declined permissions stay listed, and **Open dashboard** continues without them.
+
+After repeated denials Android stops showing a permission's prompt. The button then changes to **Settings**, which opens the app's App info page, or Health Connect settings for health categories, where the permission can still be granted. Notifications turned off in system settings on Android 8–12 now also count as missing. Build and install the APK as described in Phase 3; updating with `adb install -r` or **Update** preserves the app's login, settings, and local data.
 
 ## Exercise and food guides
 

@@ -15,6 +15,7 @@ interface DataSyncModule {
   requestRuntimePermissions(): Promise<Permissions>;
   requestHealthPermissions(): Promise<Permissions>;
   openBatterySettings(): Promise<Permissions>;
+  openAppSettings(): Promise<Permissions>;
   openHealthSettings(): Promise<Permissions>;
   openBackgroundLocationSettings(): Promise<Permissions>;
   completeOnboarding(historyDays: number): Promise<Session>;

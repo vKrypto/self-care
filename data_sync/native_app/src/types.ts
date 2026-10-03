@@ -16,6 +16,8 @@ export interface Permissions {
   batteryUnrestricted: boolean; health: HealthStatus;
   requestErrors?: string[];
 }
+/** The Android prompt or settings screen opened to grant a permission. */
+export type PermissionAction = 'usage' | 'runtime' | 'health' | 'healthSettings' | 'background' | 'battery' | 'appSettings';
 export interface SyncStatus {
   enabled: boolean; lastSyncAt: number | null; lastError: string | null;
   pending: boolean; historyDays: number; authRequired?: boolean;

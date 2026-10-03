@@ -99,6 +99,8 @@ internal class PermissionRequestCoordinator(private val context: ReactApplicatio
 
     suspend fun usage(): JSONObject = exclusive { usageSettings(); PermissionStatus.read(context) }
     suspend fun battery(): JSONObject = exclusive { batterySettings(); PermissionStatus.read(context) }
+    /** Android silently denies a runtime prompt after repeated denials; app settings can still grant it. */
+    suspend fun appDetails(): JSONObject = exclusive { settings(listOf(appSettings())); PermissionStatus.read(context) }
     suspend fun runtime(): JSONObject = exclusive {
         runtime(PermissionStatus.runtimePermissions(context))
         PermissionStatus.read(context)

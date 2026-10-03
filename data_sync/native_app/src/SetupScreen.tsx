@@ -1,17 +1,18 @@
-import React from 'react';
+import React, {useState} from 'react';
 import {Alert, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View} from 'react-native';
-import type {Permissions, Session, SyncStatus} from './types';
+import {missingPermissions, type MissingPermission} from './permissions';
+import type {PermissionAction, Permissions, Session, SyncStatus} from './types';
 
 interface Props {
   permissions: Permissions | null; status: SyncStatus | null; session: Session | null;
-  permissionErrors: string[];
+  permissionErrors: string[]; permissionsChecked: boolean;
   busy: boolean; serverUrl: string; email: string; password: string; historyDays: string;
   localConsent: boolean; uploadConsent: boolean; allowLanHttp: boolean;
   onServerUrl: (value: string) => void; onEmail: (value: string) => void;
   onPassword: (value: string) => void; onHistoryDays: (value: string) => void;
   onLocalConsent: () => void; onUploadConsent: () => void;
   onStart: () => void; onSync: () => void; onLogout: () => void; onDashboard: () => void;
-  onPermission: (permission: 'usage' | 'runtime' | 'health' | 'healthSettings' | 'background' | 'battery') => void;
+  onAllowMissing: () => void; onPermission: (permission: PermissionAction) => void;
 }
 
 function Info({title, description, why}: {title: string; description: string; why: string}) {
@@ -42,19 +43,54 @@ function PermissionRow({title, description, why, granted, status, onPress, busy,
   </View>;
 }
 
+function MissingRow({item, retry, busy, onPress}: {
+  item: MissingPermission; retry: boolean; busy: boolean; onPress: () => void;
+}) {
+  const action = retry ? 'Settings' : item.action === 'health' ? 'Choose' : item.action === 'healthSettings' ? 'Set up' : 'Allow';
+  return <View style={styles.permissionRow}>
+    <View style={styles.permissionName}><Text style={styles.permissionTitle}>{item.title}</Text>
+      <Text style={[styles.permissionStatus, styles.missing]}>{item.detail}</Text></View>
+    <Action title={action} secondary onPress={onPress} disabled={busy || !item.actionable} />
+  </View>;
+}
+
 export default function SetupScreen(props: Props) {
   const {permissions: p, status, session, busy} = props;
+  // Remounted on every visit, so a new visit offers Android's prompts again before settings.
+  const [attempted, setAttempted] = useState<PermissionAction[]>([]);
   const healthRequested = p?.health.requested_permissions ?? [];
   const healthGranted = p?.health.granted_permissions ?? [];
   const healthAvailable = p?.health.status === 'ok' && healthRequested.length > 0;
   const healthReady = healthAvailable && healthRequested.every(permission => healthGranted.includes(permission));
   const collecting = !!status?.collectionEnabled;
   const localConfigured = !!status?.onboarded;
-  const runtime = () => props.onPermission('runtime');
+  const missing = p ? missingPermissions(p) : [];
+  // Android stops showing a prompt after repeated denials, so a second tap opens settings.
+  const retry = (action: PermissionAction, fallback: PermissionAction) => fallback !== action && attempted.includes(action);
+  const request = (action: PermissionAction, fallback: PermissionAction) => {
+    if (!attempted.includes(action)) { setAttempted([...attempted, action]); }
+    props.onPermission(retry(action, fallback) ? fallback : action);
+  };
+  const runtime = () => request('runtime', 'appSettings');
+  const runtimeAction = retry('runtime', 'appSettings') ? 'Settings' : 'Allow';
   return <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
     <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
       <Text style={styles.title}>Set up your data</Text>
       <Text style={styles.subtitle}>Collect on this device. Connect a server when you’re ready.</Text>
+      {localConfigured && <View style={[styles.card, props.permissionsChecked && missing.length > 0 && styles.attention]}>
+        {!props.permissionsChecked ? <Text style={styles.subtitle}>Checking Android permissions…</Text>
+          : !missing.length ? <Text style={[styles.permissionTitle, styles.enabled]}>✓ All permissions allowed</Text> : <>
+          <View style={styles.cardHeader}>
+            <Text style={styles.cardTitle}>{missing.length === 1 ? '1 permission missing' : `${missing.length} permissions missing`}</Text>
+            {missing.length > 1 && <Action title={busy ? 'Working…' : 'Allow all'} onPress={props.onAllowMissing} disabled={busy} />}
+          </View>
+          <Text style={styles.subtitle}>Denied, or turned off in Android settings. Allow them to collect all available data.</Text>
+          {missing.map(item => <MissingRow key={item.key} item={item} retry={retry(item.action, item.fallback)} busy={busy}
+            onPress={() => request(item.action, item.fallback)} />)}
+          {missing.some(item => retry(item.action, item.fallback)) &&
+            <Text style={styles.subtitle}>No prompt? Android stops asking after repeated denials. Tap Settings and allow it there.</Text>}
+        </>}
+      </View>}
       <View style={styles.card}>
         <View style={styles.cardHeader}>
           <Text style={styles.cardTitle}>1. Start collecting data</Text>
@@ -66,22 +102,23 @@ export default function SetupScreen(props: Props) {
         <PermissionRow title="App & screen usage" granted={!!p?.usageAccess} status={p?.usageAccess ? 'Allowed · required' : 'Required'}
           description="Android Usage Access reads app foreground time, activity transitions, available screen/unlock events, app metadata and per-app network totals. In Android settings, select Forma and turn on Permit usage access. Detailed event history is usually kept for only a few days."
           why="To build your app and screen usage history. Collection needs this access." busy={busy} onPress={() => props.onPermission('usage')} />
-        <PermissionRow title="Calendar" granted={!!p?.calendar} description="Read calendar events visible to Android, including event details. No calendar events are changed."
+        <PermissionRow title="Calendar" granted={!!p?.calendar} action={runtimeAction} description="Read calendar events visible to Android, including event details. No calendar events are changed."
           why="To include your schedule alongside daily activity." busy={busy} onPress={runtime} />
-        <PermissionRow title="Location" granted={!!p?.location} description="Read available location snapshots. Approximate location is accepted; precise location is optional. This cannot reconstruct past travel."
+        <PermissionRow title="Location" granted={!!p?.location} action={runtimeAction} description="Read available location snapshots. Approximate location is accepted; precise location is optional. This cannot reconstruct past travel."
           why="To add location context to collection jobs." busy={busy} onPress={runtime} />
-        <PermissionRow title="Physical activity" granted={!!p?.activityRecognition} description="Access the step counter sensor where available. A collection takes a short sensor snapshot; this is not a complete historical step log."
+        <PermissionRow title="Physical activity" granted={!!p?.activityRecognition} action={runtimeAction} description="Access the step counter sensor where available. A collection takes a short sensor snapshot; this is not a complete historical step log."
           why="To include available movement data." busy={busy} onPress={runtime} />
-        <PermissionRow title="Notifications" granted={!!p?.notifications} description="Allow Forma to show collection and sync failure notifications. This does not read notifications from other apps."
+        <PermissionRow title="Notifications" granted={!!p?.notifications} action={runtimeAction} description="Allow Forma to show collection and sync failure notifications. This does not read notifications from other apps."
           why="To let you know when collection or uploads need attention." busy={busy} onPress={runtime} />
         <PermissionRow title="Health Connect" granted={healthReady}
           status={healthReady ? 'Allowed' : healthAvailable ? (healthGranted.length ? 'Partly allowed' : 'Optional') : 'Unavailable / needs update'}
-          action={healthAvailable ? 'Choose' : 'Set up'}
+          action={healthAvailable ? retry('health', 'healthSettings') ? 'Settings' : 'Choose' : 'Set up'}
           description={`Read the categories you approve: steps, sleep, workouts, vitals, nutrition, hydration, body measurements and sensitive reproductive health. Supported providers also offer background reads and history older than 30 days. Only records already shared with Health Connect can be collected. Background: ${p?.health.background_granted ? 'allowed' : p?.health.background_supported ? 'not allowed' : 'unsupported'}. Older history: ${p?.health.history_granted ? 'allowed' : p?.health.history_supported ? 'not allowed' : 'unsupported'}. Provider: ${p?.health.status ?? 'checking'}.`}
           why="To include health data you choose to share. You can approve any subset or skip it." busy={busy}
-          onPress={() => props.onPermission(healthAvailable ? 'health' : 'healthSettings')} />
-        <PermissionRow title="Background location" granted={!!p?.backgroundLocation} description="After granting Location, select Allow all the time in Android app permissions. Android 10 may show a separate prompt."
-          why="To include available location snapshots in hourly jobs while the app is closed." busy={busy} onPress={() => props.onPermission('background')} />
+          onPress={() => request(healthAvailable ? 'health' : 'healthSettings', 'healthSettings')} />
+        <PermissionRow title="Background location" granted={!!p?.backgroundLocation} action={retry('background', 'appSettings') ? 'Settings' : 'Allow'}
+          description="After granting Location, select Allow all the time in Android app permissions. Android 10 may show a separate prompt."
+          why="To include available location snapshots in hourly jobs while the app is closed." busy={busy} onPress={() => request('background', 'appSettings')} />
         <PermissionRow title="Background & battery" granted={!!p?.batteryUnrestricted} status={p?.batteryUnrestricted ? 'Unrestricted' : 'Restricted'}
           description="In Android’s battery list, choose All apps, select Forma, and allow unrestricted background use or choose Don’t optimize. Labels vary by Android version. Hourly jobs use Android WorkManager and resume after reboot. Android can still delay jobs; force-stop pauses work until you reopen Forma."
           why="To reduce delays in collection and uploads while the app is closed." busy={busy} onPress={() => props.onPermission('battery')} />
@@ -145,7 +182,8 @@ const styles = StyleSheet.create({
   cardTitle: {fontSize: 16, fontWeight: '700', color: '#213c2b', flex: 1},
   permissionRow: {flexDirection: 'row', alignItems: 'center', borderBottomWidth: StyleSheet.hairlineWidth, borderColor: '#e2e7dd', minHeight: 44},
   permissionName: {flex: 1}, permissionTitle: {fontSize: 13, color: '#213c2b', fontWeight: '600'},
-  permissionStatus: {fontSize: 10, lineHeight: 14, color: '#768171'}, enabled: {color: '#267957'},
+  permissionStatus: {fontSize: 10, lineHeight: 14, color: '#768171'}, enabled: {color: '#267957'}, missing: {color: '#9c412f'},
+  attention: {borderColor: '#efc4b3', backgroundColor: '#fffaf6'},
   info: {minWidth: 44, minHeight: 44, justifyContent: 'center', alignItems: 'center'}, infoText: {fontSize: 20, color: '#267957'},
   button: {minHeight: 44, paddingVertical: 10, paddingHorizontal: 13, borderRadius: 9, backgroundColor: '#267957', alignItems: 'center', justifyContent: 'center'},
   secondaryButton: {backgroundColor: '#eaf0e4'}, buttonText: {fontWeight: '700', color: '#fff', fontSize: 12}, secondaryText: {color: '#305a37'}, dim: {opacity: 0.5},

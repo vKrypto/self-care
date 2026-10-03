@@ -2,6 +2,7 @@ package com.forma.datasync.sync
 
 import android.Manifest
 import android.app.AppOpsManager
+import android.app.NotificationManager
 import android.content.Context
 import android.content.pm.PackageManager
 import android.os.Build
@@ -22,9 +23,11 @@ object PermissionStatus {
         }
         val location = granted(context, Manifest.permission.ACCESS_FINE_LOCATION) || granted(context, Manifest.permission.ACCESS_COARSE_LOCATION)
         val power = context.getSystemService(Context.POWER_SERVICE) as PowerManager
+        // Before Android 13 there is no notification permission, but users can still turn them off in settings.
+        val notificationsEnabled = (context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager).areNotificationsEnabled()
         return JSONObject()
             .put("usageAccess", usageMode == AppOpsManager.MODE_ALLOWED)
-            .put("notifications", Build.VERSION.SDK_INT < 33 || granted(context, Manifest.permission.POST_NOTIFICATIONS))
+            .put("notifications", notificationsEnabled && (Build.VERSION.SDK_INT < 33 || granted(context, Manifest.permission.POST_NOTIFICATIONS)))
             .put("activityRecognition", Build.VERSION.SDK_INT < 29 || granted(context, Manifest.permission.ACTIVITY_RECOGNITION))
             .put("calendar", granted(context, Manifest.permission.READ_CALENDAR))
             .put("location", location)

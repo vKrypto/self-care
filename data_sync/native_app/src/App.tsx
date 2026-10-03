@@ -7,12 +7,14 @@ import {dataSync} from './native';
 import {collectionScreen, readableBytes} from './collection';
 import SyncHistoryScreen from './SyncHistoryScreen';
 import SetupScreen from './SetupScreen';
+import {setupComplete} from './permissions';
 import {startLocalSetup, syncServerSetup} from './setup';
-import type {Permissions, Session, SyncStatus} from './types';
+import type {PermissionAction, Permissions, Session, SyncStatus} from './types';
 import {normalizeServerUrl} from './validation';
 
 const ALLOW_LAN_HTTP = dataSync.allowLanHttp === true;
 const BUILD_LABEL = `${ALLOW_LAN_HTTP ? 'LAN preview' : __DEV__ ? 'Development' : 'HTTPS preview'} · ${dataSync.appVersion}`;
+const ALL_SET = 'All set, you can now start using the app.';
 
 function Button({title, onPress, disabled = false, secondary = false}: {
   title: string; onPress: () => void; disabled?: boolean; secondary?: boolean;
@@ -29,10 +31,12 @@ function Content() {
   const [busy, setBusy] = useState(false);
   const [manualOperation, setManualOperation] = useState<'collect' | 'sync' | null>(null);
   const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
   const [serverUrl, setServerUrl] = useState(ALLOW_LAN_HTTP ? dataSync.defaultServerUrl : __DEV__ ? 'http://10.0.2.2:8000' : '');
   const [email, setEmail] = useState(ALLOW_LAN_HTTP ? dataSync.defaultEmail : '');
   const [password, setPassword] = useState(ALLOW_LAN_HTTP ? dataSync.defaultPassword : '');
   const [permissions, setPermissions] = useState<Permissions | null>(null);
+  const [permissionsChecked, setPermissionsChecked] = useState(false);
   const [permissionErrors, setPermissionErrors] = useState<string[]>([]);
   const [status, setStatus] = useState<SyncStatus | null>(null);
   const [settings, setSettings] = useState(false);
@@ -46,6 +50,9 @@ function Content() {
   const manualSyncBusy = useRef(false);
   const refreshRevision = useRef(0);
   const authRevision = useRef(0);
+  const allSetArmed = useRef(false);
+  const onboarding = collectionScreen(session, status, settings, showSignIn) === 'onboarding';
+  const setupVisible = !starting && onboarding;
 
   const rememberSession = useCallback((saved: Session | null) => {
     sessionRef.current = saved;
@@ -103,10 +110,31 @@ function Content() {
     return () => { subscription.remove(); clearInterval(interval); };
   }, [refresh]);
 
+  // Each visit to setup re-reads Android permissions: access can be revoked in system settings
+  // at any time, and the periodic refresh may be several seconds old.
+  useEffect(() => {
+    if (!setupVisible) { return; }
+    let active = true;
+    allSetArmed.current = false;
+    dataSync.permissionStatus().then(current => { if (active) { setPermissions(current); } }).catch(() => {})
+      .finally(() => { if (active) { setPermissionsChecked(true); } });
+    return () => { active = false; setPermissionsChecked(false); };
+  }, [setupVisible]);
+
+  // After a fresh check finds setup incomplete, completing it confirms and opens the dashboard.
+  // A visit that starts complete stays open, so the server card remains reachable.
+  useEffect(() => {
+    if (!setupVisible || !permissionsChecked || busy) { return; }
+    if (!setupComplete(permissions, status)) { allSetArmed.current = true; return; }
+    if (!allSetArmed.current) { return; }
+    allSetArmed.current = false;
+    setNotice(ALL_SET); setSettings(false); setShowSignIn(false);
+  }, [setupVisible, permissionsChecked, busy, permissions, status]);
+
   const perform = async (action: () => Promise<unknown>) => {
     if (actionBusy.current) { return; }
     actionBusy.current = true;
-    setBusy(true); setError(''); setPermissionErrors([]);
+    setBusy(true); setError(''); setNotice(''); setPermissionErrors([]);
     try { await action(); await refresh(); }
     catch (e) {
       setError(e instanceof Error ? e.message : 'Please retry.');
@@ -128,18 +156,26 @@ function Content() {
   });
 
   const connectServer = () => perform(async () => {
+    // Server setup owns its navigation: success opens the dashboard and failure keeps this form.
+    allSetArmed.current = false;
+    let granted: Permissions | null = null;
     const origin = normalizeServerUrl(sessionRef.current?.serverUrl ?? serverUrl, __DEV__, ALLOW_LAN_HTTP);
     const revision = ++authRevision.current;
     await syncServerSetup(dataSync, {
       historyDays, localConfigured: !!status?.onboarded, uploadConsent: consent,
-      session: sessionRef.current, serverUrl: origin, email, password, onPermissions: rememberPermissions,
+      session: sessionRef.current, serverUrl: origin, email, password,
+      onPermissions: current => { granted = current; rememberPermissions(current); },
       onSession: saved => {
         if (revision !== authRevision.current) { throw new Error('Your account changed. Review sync consent again.'); }
         rememberSession(saved); setServerUrl(saved.serverUrl); setEmail(saved.user.email); setPassword('');
       },
     });
-    setStatus(await dataSync.status()); setSettings(false); setShowSignIn(false); setConsent(false); setLocalConsent(false);
+    const connected = await dataSync.status();
+    setStatus(connected); setSettings(false); setShowSignIn(false); setConsent(false); setLocalConsent(false);
+    if (setupComplete(granted, connected)) { setNotice(ALL_SET); }
   });
+
+  const allowMissing = () => perform(async () => rememberPermissions(await dataSync.requestCollectionPermissions()));
 
   const logout = () => perform(async () => {
     authRevision.current++;
@@ -150,7 +186,7 @@ function Content() {
     if (manualSyncBusy.current || actionBusy.current) { return; }
     if (upload && (!sessionRef.current || !status?.connected || !status.enabled)) { return; }
     const expectedToken = sessionRef.current?.token;
-    manualSyncBusy.current = true; setManualOperation(upload ? 'sync' : 'collect'); setError('');
+    manualSyncBusy.current = true; setManualOperation(upload ? 'sync' : 'collect'); setError(''); setNotice('');
     try {
       await (upload ? dataSync.syncNow() : dataSync.collectNow());
     } catch (e) {
@@ -174,16 +210,15 @@ function Content() {
     return <SafeAreaView style={styles.center}><ActivityIndicator color="#267957" /><Text style={styles.body}>Opening Forma…</Text></SafeAreaView>;
   }
 
-  const screen = collectionScreen(session, status, settings, showSignIn);
-  const onboarding = screen === 'onboarding';
   const connectionRemoved = !!status?.connectionRemoved;
-  const openSettings = () => { setHistoryDays(String(status?.historyDays ?? 30)); setConsent(false); setLocalConsent(false); setSettings(true); setShowSignIn(false); };
+  const openSettings = () => { setHistoryDays(String(status?.historyDays ?? 30)); setConsent(false); setLocalConsent(false); setNotice(''); setSettings(true); setShowSignIn(false); };
   const openSignIn = () => { openSettings(); setError(''); };
-  const openPermission = (permission: 'usage' | 'runtime' | 'health' | 'healthSettings' | 'background' | 'battery') => {
-    const actions = {
+  const openPermission = (permission: PermissionAction) => {
+    const actions: Record<PermissionAction, () => Promise<Permissions>> = {
       usage: () => dataSync.openUsageSettings(), runtime: () => dataSync.requestRuntimePermissions(),
       health: () => dataSync.requestHealthPermissions(), healthSettings: () => dataSync.openHealthSettings(),
       background: () => dataSync.openBackgroundLocationSettings(), battery: () => dataSync.openBatterySettings(),
+      appSettings: () => dataSync.openAppSettings(),
     };
     void perform(async () => rememberPermissions(await actions[permission]()));
   };
@@ -217,14 +252,16 @@ function Content() {
         }} />}
     </View>
     {!!error && <View accessibilityRole="alert" style={styles.error}><Text style={styles.errorText}>{error}</Text></View>}
+    {!!notice && <View accessibilityLiveRegion="polite" style={styles.notice}><Text style={styles.noticeText}>{notice}</Text></View>}
     {busy && <ActivityIndicator color="#267957" style={styles.spinner} />}
 
-    {onboarding ? <SetupScreen permissions={permissions} permissionErrors={permissionErrors} status={status} session={session} busy={busy}
+    {onboarding ? <SetupScreen permissions={permissions} permissionErrors={permissionErrors} permissionsChecked={permissionsChecked}
+      status={status} session={session} busy={busy}
       serverUrl={serverUrl} email={email} password={password} historyDays={historyDays}
       localConsent={localConsent} uploadConsent={consent} allowLanHttp={ALLOW_LAN_HTTP}
       onServerUrl={setServerUrl} onEmail={setEmail} onPassword={setPassword} onHistoryDays={setHistoryDays}
       onLocalConsent={() => setLocalConsent(!localConsent)} onUploadConsent={() => setConsent(!consent)}
-      onStart={startLocally} onSync={connectServer} onLogout={logout} onPermission={openPermission}
+      onStart={startLocally} onSync={connectServer} onLogout={logout} onAllowMissing={allowMissing} onPermission={openPermission}
       onDashboard={() => { setSettings(false); setShowSignIn(false); }} /> : session && status?.connected ? <ScrollView contentContainerStyle={styles.content}>
       {collectionPanel}
       <View style={styles.syncBar}>
@@ -283,6 +320,7 @@ const styles = StyleSheet.create({
   secondaryButton: {backgroundColor: '#eaf0e4'}, buttonText: {fontWeight: '700', color: '#fff', fontSize: 13}, secondaryText: {color: '#305a37'},
   dim: {opacity: 0.5}, granted: {fontSize: 11, color: '#267957', fontWeight: '700'}, muted: {fontSize: 11, color: '#768171'},
   error: {margin: 12, padding: 14, borderRadius: 10, backgroundColor: '#fce8df'}, errorText: {color: '#9c412f', fontSize: 13, lineHeight: 19},
+  notice: {margin: 12, padding: 14, borderRadius: 10, backgroundColor: '#e2f0e3'}, noticeText: {color: '#1f5c3f', fontSize: 13, lineHeight: 19, fontWeight: '600'},
   spinner: {padding: 12}, consent: {flexDirection: 'row', alignItems: 'flex-start', gap: 12}, checkbox: {fontSize: 24, color: '#267957'},
   syncBar: {padding: 16, gap: 8, borderBottomWidth: 1, borderColor: '#dfe6d8'},
 });
