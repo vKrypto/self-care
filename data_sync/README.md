@@ -33,6 +33,12 @@ cannot be reconstructed, but newly stored daily summaries and lifetime sync
 counters have separate retention. See the [server guide](native_app/server/README.md)
 for API details, exact storage limits, and connection removal.
 
+Collection checks identify sources needing permission or background access even
+when no records were uploaded. Those checks apply to the collection date;
+aggregate Android unlock counts are shown as estimates. Retained exports refresh
+automatically when their daily projection needs an update, without duplicate
+totals or sync counts.
+
 ## Install the generated APK
 
 The generated, standalone test build is

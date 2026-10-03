@@ -150,8 +150,8 @@ native credential is attached to **Open website**.
 | `GET /api/devices/apk/{filename}` | Authenticated APK download; only known generated filenames, no symlinks or arbitrary filesystem paths |
 | `GET /api/devices/{device_id}` | `{device,retention}` for one owned device |
 | `GET /api/devices/{device_id}/batches?limit=25&offset=0` | `{batches,total,limit,offset,has_more,next_offset}`; receipt metadata without full raw payloads; limit 1–100 |
-| `GET /api/devices/{device_id}/batches/{batch_id}` | `{batch,raw_retained,permissions,sources}`; each source has key, status, completeness, record count, and original metadata |
-| `GET /api/devices/{device_id}/batches/{batch_id}/sources/{source_key}?limit=100&offset=0` | `{source,records,total,limit,offset,has_more,next_offset}`; limit 1–500; preserves unknown sources and nested record fields |
+| `GET /api/devices/{device_id}/batches/{batch_id}` | `{batch,raw_retained,permissions,permissions_json,sources}`; each source has key, status, completeness, record count, original metadata and `metadata_json` |
+| `GET /api/devices/{device_id}/batches/{batch_id}/sources/{source_key}?limit=100&offset=0` | `{source,records,record_jsons,total,limit,offset,has_more,next_offset}`; limit 1–500; preserves unknown sources and nested record fields; JSON display strings preserve Android 64-bit integers |
 | `GET /api/devices/{device_id}/batches/{batch_id}/raw` | Original accepted JSON envelope; 410 when raw records expired |
 | `DELETE /api/devices/{device_id}` | `{deleted:true,device_id}`; removes server device history and derived records, and revokes that account's old device identifier |
 | `GET /api/wellbeing` | Daily/weekly metrics, source statuses, device list, timezone, notes, retention, and backfill progress; optional `device_id`, `period=daily\|weekly`, `start_date`, `end_date` |
@@ -168,8 +168,9 @@ and default to the latest 14 days. The profile timezone takes priority, followed
 by a reported device timezone and UTC. Weekly results contain full Monday–Sunday
 weeks with seven daily entries, including missing days. Accepted uploads derive
 their dated metrics in the same transaction as the receipt. Previously retained
-raw exports are backfilled once, processing at most 500 receipts / 16 MiB per
-request; `{backfill:{processed_this_request,pending_batches,complete}}` lets the
+raw exports are backfilled when their projection version needs an update,
+processing at most 500 receipts / 16 MiB per request;
+`{backfill:{processed_this_request,pending_batches,complete}}` lets the
 page report progress and refresh until the import finishes.
 
 Observed app transitions, screen/unlock events, network buckets and supported
@@ -183,6 +184,14 @@ to reproduce Health Connect's user-selected origin priority totals. All-device
 health views select one device per metric so overlapping wearable exports are
 not added together. Full records for every retained source remain accessible
 through device history even when no daily metric is derived for that source.
+
+The Android collector reports blocked or omitted sources in `source_status`.
+Wellbeing uses these collection checks to show permission and background access
+requirements even when no records were uploaded for that source. Checks belong
+to the collection date and do not imply that a permission was denied throughout
+a historical export window. Actual source sections take precedence over checks.
+Unlock counts read from Android aggregate summaries are explicitly labeled as
+estimates in both daily and weekly views.
 
 ## Storage, retention and removal
 

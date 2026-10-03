@@ -274,6 +274,43 @@ def test_ingestion_populates_daily_and_weekly_views_before_raw_history_expires(c
     assert client.get(path).json()["days"][0]["usage"]["foreground_ms"] == 60_000
 
 
+def test_wellbeing_upgrade_reports_bounded_pending_backfill_without_duplicate_totals(client, monkeypatch):
+    from data_sync.native_app.server import wellbeing
+    session = member(client)
+    device = register(client, session)
+    now = int(time.time() * 1000)
+    body = batch(session, device, {
+        "device_snapshot": {"status": "ok", "complete": True, "mode": "snapshot", "records": [{"timezone": "UTC"}]},
+        "usage_events": {"status": "ok", "complete": True, "records": [
+            {"timestamp_ms": now - 60_000, "event_type": 1, "package_name": "example.app"},
+            {"timestamp_ms": now - 1, "event_type": 2, "package_name": "example.app"}]},
+        "source_status": {"status": "ok", "complete": True, "records": [
+            {"source": "health_weight", "status": "denied", "complete": False, "collected": False}]},
+    })
+    body["window"] = {"start_ms": now - 120_000, "end_ms": now}
+    body["collected_at_ms"] = now
+    upload(client, session, body)
+    upload(client, session, {**body, "batch_id": str(uuid4())})
+    with planner.connect() as con:
+        con.execute("UPDATE native_wellbeing_batches SET projection_version=1")
+        con.execute("DELETE FROM native_wellbeing_observations WHERE source='health_weight'")
+        con.execute("UPDATE native_wellbeing_days SET dirty=1")
+        budget = con.execute("SELECT MAX(payload_bytes) FROM native_batches").fetchone()[0]
+    monkeypatch.setattr(wellbeing, "MAX_BACKFILL_BYTES_PER_REQUEST", budget)
+    selected = datetime.fromtimestamp(now / 1000, timezone.utc).date().isoformat()
+    path = f"/api/wellbeing?device_id={device}&start_date={selected}&end_date={selected}"
+    first = client.get(path).json()
+    assert first["backfill"] == {"processed_this_request": 1, "pending_batches": 1, "complete": False}
+    assert first["days"][0]["health"]["weight"]["status"] == "denied"
+    second = client.get(path).json()
+    assert second["backfill"] == {"processed_this_request": 1, "pending_batches": 0, "complete": True}
+    assert second["days"][0]["usage"]["foreground_ms"] == 59_999
+    assert client.get(path).json()["backfill"]["processed_this_request"] == 0
+    assert client.get(f"/api/devices/{device}").json()["device"]["sync_count"] == 2
+    with planner.connect() as con:
+        assert con.execute("SELECT COUNT(*) FROM native_wellbeing_facts WHERE source='usage_events'").fetchone()[0] == 2
+
+
 def test_foreign_account_cannot_read_delete_or_aggregate_a_device(client):
     first = member(client)
     device = register(client, first)

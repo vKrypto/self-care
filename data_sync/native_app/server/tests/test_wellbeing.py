@@ -250,6 +250,125 @@ def test_backfill_is_idempotent_and_preserves_original_payload(con):
     assert con.execute("SELECT payload FROM native_batches").fetchone()[0] == raw
 
 
+def test_native_omitted_source_checks_show_denials_only_on_collection_day(con):
+    con.execute("INSERT INTO profiles VALUES('member',?)", (json.dumps({"timezone": "Asia/Kolkata"}),))
+    checks = [
+        {"source": "health_steps", "status": "denied", "complete": False, "collected": False},
+        {"source": "location_snapshot", "status": "background_denied", "complete": False, "collected": False},
+        {"source": "calendar_events", "status": "unavailable", "complete": False, "collected": False},
+        {"source": "usage_events", "status": "error", "complete": False, "collected": False},
+    ]
+    body = payload({"source_status": section(checks)}, start="2026-09-25T00:00:00Z",
+                   end="2026-09-26T00:00:00Z", collected="2026-09-30T21:00:00Z")
+    assert ingest(con, body)
+    result = day(con, "2026-10-01")
+    assert result["health"]["steps"]["value"] is None
+    assert result["health"]["steps"]["status"] == "denied"
+    assert next(metric for metric in result["metrics"] if metric["key"] == "foreground")["status"] == "error"
+    sources = {source["source"]: source for source in result["sources"]}
+    for check in checks:
+        assert sources[check["source"]]["status"] == check["status"]
+        assert sources[check["source"]]["record_count"] == 0
+        assert sources[check["source"]]["complete"] is False
+    assert "source_status" not in {source["source"] for source in day(con, "2026-09-25")["sources"]}
+    assert day(con, "2026-09-30")["health"]["steps"]["status"] == "no_data"
+    assert con.execute("SELECT COUNT(*) FROM native_wellbeing_facts").fetchone()[0] == 0
+
+
+def test_actual_sections_override_summary_checks_without_duplicate_observations(con):
+    checks = [{"source": "health_steps", "status": "denied", "complete": False},
+              {"source": "calendar_events", "status": "ok", "complete": True}]
+    ingest(con, payload({
+        "health_steps": section([health("StepsRecord", "2026-09-30T12:00:00Z", "2026-09-30T13:00:00Z", count=500)]),
+        "calendar_events": section(status="denied"), "source_status": section(checks),
+    }))
+    result = day(con)
+    assert result["health"]["steps"]["value"] == 500
+    sources = {source["source"]: source for source in result["sources"]}
+    assert sources["health_steps"]["record_count"] == 1
+    assert sources["calendar_events"]["status"] == "denied"
+    assert con.execute("SELECT COUNT(*) FROM native_wellbeing_observations WHERE source='health_steps'").fetchone()[0] == 1
+    assert day(con, "2026-10-01")["health"]["steps"]["status"] == "no_data"
+
+
+def test_summary_checks_ignore_malformed_self_references_and_duplicates(con):
+    checks = [None, "bad", {}, {"source": []}, {"source": ""}, {"source": " "},
+              {"source": "source_status", "status": "denied"}, {"source": "x" * 101, "status": "denied"},
+              {"source": "health_steps", "status": "denied", "complete": False},
+              {"source": "health_steps", "status": "ok", "complete": True, "record_count": 999},
+              {"source": "health_sleep_session", "status": [], "complete": False},
+              {"source": "health_distance", "status": "ok", "complete": "true"}]
+    assert ingest(con, payload({"source_status": section(checks)}))
+    result = day(con, "2026-10-01")
+    assert result["health"]["steps"]["status"] == "denied"
+    assert result["health"]["sleep"]["status"] == "unavailable"
+    assert result["health"]["distance"]["value"] is None
+    sources = {source["source"]: source for source in result["sources"]}
+    assert set(sources) == {"source_status", "health_steps", "health_sleep_session", "health_distance"}
+    assert sources["health_distance"]["complete"] is False
+    assert sources["health_steps"]["record_count"] == 0
+    assert con.execute("SELECT COUNT(*) FROM native_wellbeing_observations").fetchone()[0] == 4
+
+
+def test_summary_check_projection_is_bounded(con):
+    checks = [{"source": f"future_source_{index}", "status": "denied", "complete": False}
+              for index in range(w.MAX_SOURCE_CHECKS_PER_BATCH)]
+    checks.append({"source": "health_steps", "status": "denied", "complete": False})
+    ingest(con, payload({"source_status": section(checks)}))
+    assert con.execute("SELECT COUNT(*) FROM native_wellbeing_observations").fetchone()[0] == w.MAX_SOURCE_CHECKS_PER_BATCH + 1
+    assert day(con, "2026-10-01")["health"]["steps"]["status"] == "no_data"
+
+
+def test_summary_metadata_does_not_consume_the_real_record_projection_budget(con, monkeypatch):
+    monkeypatch.setattr(w, "MAX_BATCH_RECORDS", 2)
+    ingest(con, payload({
+        "source_status": section([None, None, None]),
+        "health_steps": section([health("StepsRecord", "2026-09-30T12:00:00Z", "2026-09-30T13:00:00Z", count=500)]),
+    }))
+    assert day(con)["health"]["steps"]["value"] == 500
+
+
+def test_projection_marker_schema_upgrade_preserves_existing_rows_and_defaults_to_v1(con):
+    con.execute("DROP TABLE native_wellbeing_batches")
+    con.execute("CREATE TABLE native_wellbeing_batches(tenant TEXT,device_id TEXT,batch_id TEXT,received_at_ms INTEGER,PRIMARY KEY(tenant,device_id,batch_id))")
+    con.execute("INSERT INTO native_wellbeing_batches VALUES('member','phone','legacy',123)")
+    w.init_wellbeing_db(con)
+    w.init_wellbeing_db(con)
+    row = con.execute("SELECT * FROM native_wellbeing_batches").fetchone()
+    assert row["projection_version"] == 1
+    assert row["received_at_ms"] == 123
+    assert [column[1] for column in con.execute("PRAGMA table_info(native_wellbeing_batches)")].count("projection_version") == 1
+
+
+def test_versioned_backfill_adds_checks_and_moves_old_summary_without_replaying_facts(con):
+    body = payload({
+        "usage_events": section([event("2026-09-30T12:00:00Z", 1), event("2026-09-30T12:30:00Z", 2)]),
+        "source_status": section([{"source": "health_steps", "status": "denied", "complete": False, "collected": False}]),
+    })
+    raw = json.dumps(body)
+    assert ingest(con, body, identifier="legacy")
+    # An installed v1 projection already has real facts, but only a historical
+    # source_status observation; it did not extract the omitted-source checks.
+    con.execute("DELETE FROM native_wellbeing_observations WHERE source='health_steps'")
+    con.execute("UPDATE native_wellbeing_observations SET start_ms=?,end_ms=? WHERE source='source_status'",
+                (body["window"]["start_ms"], body["window"]["end_ms"]))
+    con.execute("UPDATE native_wellbeing_batches SET projection_version=1")
+    con.execute("DELETE FROM native_wellbeing_days")
+    before_facts = [tuple(row) for row in con.execute("SELECT * FROM native_wellbeing_facts ORDER BY record_key")]
+    assert day(con)["usage"]["foreground_ms"] == 1_800_000
+    assert "source_status" in {source["source"] for source in day(con)["sources"]}
+    con.execute("INSERT INTO native_batches VALUES(?,?,?,?,?)", ("member", "legacy", "phone", raw, body["collected_at_ms"]))
+    assert w.backfill_wellbeing(con, "member") == 1
+    assert w.backfill_wellbeing(con, "member") == 0
+    assert day(con)["usage"]["foreground_ms"] == 1_800_000
+    assert "source_status" not in {source["source"] for source in day(con)["sources"]}
+    assert day(con, "2026-10-01")["health"]["steps"]["status"] == "denied"
+    assert [tuple(row) for row in con.execute("SELECT * FROM native_wellbeing_facts ORDER BY record_key")] == before_facts
+    assert con.execute("SELECT COUNT(*) FROM native_wellbeing_batches").fetchone()[0] == 1
+    assert con.execute("SELECT projection_version FROM native_wellbeing_batches").fetchone()[0] == w.CURRENT_PROJECTION_VERSION
+    assert con.execute("SELECT payload FROM native_batches").fetchone()[0] == raw
+
+
 @pytest.mark.parametrize("kwargs", [{"start_date": "bad"}, {"start_date": "2026-10-02", "end_date": "2026-10-01"},
                                     {"start_date": "2026-01-01", "end_date": "2026-10-01"}, {"period": "hourly"}])
 def test_invalid_date_queries_are_bounded(con, kwargs):
@@ -346,6 +465,42 @@ def test_daily_screen_and_unlock_bucket_fallback_is_latest_snapshot(con):
     assert result["usage"]["unlocks"] == 4
     assert result["usage"]["foreground_ms"] is None
     assert next(m for m in result["metrics"] if m["key"] == "screen")["method"] == "android_bucket_estimate"
+
+
+def test_weekly_earlier_bucket_estimates_are_not_relabelled_by_later_observed_day(con):
+    first, last = ms("2026-09-30T00:00:00Z"), ms("2026-09-30T12:00:00Z")
+    ingest(con, payload({
+        "usage_stats": section([{"package_name": "com.estimated", "first_timestamp_ms": first,
+                                 "last_timestamp_ms": last, "total_foreground_ms": 100_000}]),
+        "usage_event_stats": section([{"event_type": kind, "count": 2, "total_time_ms": 10_000,
+                                       "first_timestamp_ms": first, "last_timestamp_ms": last} for kind in (15, 18)]),
+    }, end="2026-09-30T12:00:00Z"))
+    ingest(con, payload({"usage_events": section([
+        event("2026-10-01T12:00:00Z", 1), event("2026-10-01T12:00:00Z", 15), event("2026-10-01T12:00:00Z", 18),
+        event("2026-10-01T12:30:00Z", 2), event("2026-10-01T12:30:00Z", 16),
+    ])}, start="2026-10-01T00:00:00Z", end="2026-10-02T00:00:00Z"))
+    result = w.read_wellbeing(con, "member", "phone", "2026-09-30", "2026-10-01", "weekly")
+    metrics = {metric["key"]: metric for metric in result["weeks"][0]["metrics"]}
+    assert metrics["foreground"]["value"] == 1_900_000
+    assert metrics["screen"]["value"] == 1_810_000
+    assert metrics["unlocks"]["value"] == 3
+    for key in ("foreground", "screen", "unlocks"):
+        assert metrics[key]["method"] == "android_bucket_estimate"
+
+
+@pytest.mark.parametrize("across_devices", [False, True])
+def test_mixed_usage_and_network_estimate_methods_survive_combination(across_devices):
+    first, second = w._blank_day("2026-09-30"), w._blank_day("2026-10-01")
+    keys = ("foreground", "screen", "unlocks", "wifi_rx", "wifi_tx", "mobile_rx", "mobile_tx")
+    for entry, method in ((first, "android_bucket_estimate"), (second, "observed_events")):
+        for metric in entry["metrics"]:
+            if metric["key"] in keys:
+                metric.update(value=1, status="available", method=method)
+    combined = w._combine_days("2026-09-30", [first, second], across_devices=across_devices)
+    for metric in combined["metrics"]:
+        if metric["key"] in keys:
+            assert metric["value"] == 2
+            assert metric["method"] == "android_bucket_estimate"
 
 
 def test_backfill_byte_budget_returns_progress_then_completes(con, monkeypatch):

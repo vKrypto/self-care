@@ -18,6 +18,23 @@ export function sourceLabel(key) {
   return sourceLabels[key] || key.replace(/^health_/, "").replace(/_/g, " ");
 }
 
+export function sourceStatusLabel(status) {
+  return (
+    {
+      ok: "Available",
+      available: "Available",
+      denied: "Permission required",
+      permission_denied: "Permission required",
+      background_denied: "Background access required",
+      no_data: "No records",
+      unavailable: "Unavailable",
+      error: "Collection error",
+    }[status] ||
+    status?.replace(/_/g, " ") ||
+    "Unknown"
+  );
+}
+
 export function formatDuration(milliseconds) {
   if (milliseconds == null || !Number.isFinite(milliseconds)) return "No data";
   const minutes = Math.round(milliseconds / 60000);

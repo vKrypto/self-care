@@ -24,6 +24,8 @@ MAX_OBSERVATIONS_PER_DEVICE = 60_000
 MAX_BATCH_MARKERS_PER_DEVICE = 60_000
 MAX_BATCH_RECORDS = 100_000
 MAX_BACKFILL_BYTES_PER_REQUEST = 16 * 1024 * 1024
+MAX_SOURCE_CHECKS_PER_BATCH = 128
+CURRENT_PROJECTION_VERSION = 2
 
 # Stable public metric keys. Units refer to the decoded SDK properties, not
 # inferred conversions from counters or a member's manually entered check-ins.
@@ -165,6 +167,7 @@ def init_wellbeing_db(con):
             FOREIGN KEY(tenant,device_id) REFERENCES native_devices(tenant,device_id) ON DELETE CASCADE)""",
         """CREATE TABLE IF NOT EXISTS native_wellbeing_batches (
             tenant TEXT NOT NULL,device_id TEXT NOT NULL,batch_id TEXT NOT NULL,received_at_ms INTEGER NOT NULL,
+            projection_version INTEGER NOT NULL DEFAULT 1,
             PRIMARY KEY(tenant,device_id,batch_id),
             FOREIGN KEY(tenant,device_id) REFERENCES native_devices(tenant,device_id) ON DELETE CASCADE)""",
         """CREATE TABLE IF NOT EXISTS native_wellbeing_zones (
@@ -178,6 +181,8 @@ def init_wellbeing_db(con):
             FOREIGN KEY(tenant,device_id) REFERENCES native_devices(tenant,device_id) ON DELETE CASCADE)""",
     ):
         con.execute(sql)
+    if "projection_version" not in {row[1] for row in con.execute("PRAGMA table_info(native_wellbeing_batches)")}:
+        con.execute("ALTER TABLE native_wellbeing_batches ADD COLUMN projection_version INTEGER NOT NULL DEFAULT 1")
 
 
 def _json(value):
@@ -362,9 +367,13 @@ def derive_batch(con, tenant, device_id, batch_id, payload, received_at_ms):
     A historical backfill and a repeated export use exactly the same path. Unknown
     fields remain in raw history and never cause the acknowledgement to fail.
     """
-    if con.execute("SELECT 1 FROM native_wellbeing_batches WHERE tenant=? AND device_id=? AND batch_id=?",
-                   (tenant, device_id, batch_id)).fetchone():
+    marker = con.execute("SELECT projection_version FROM native_wellbeing_batches WHERE tenant=? AND device_id=? AND batch_id=?",
+                         (tenant, device_id, batch_id)).fetchone()
+    if marker and marker["projection_version"] >= CURRENT_PROJECTION_VERSION:
         return False
+    # Projection 2 adds current permission checks. Replaying already-projected
+    # usage/health records would unnecessarily invalidate retained daily totals.
+    checks_upgrade = marker is not None
     if not isinstance(payload, dict):
         return False
     window = payload.get("window", {})
@@ -394,11 +403,13 @@ def derive_batch(con, tenant, device_id, batch_id, payload, received_at_ms):
     for source, section in list(data.items())[:128]:
         if not isinstance(source, str) or len(source) > 100 or not isinstance(section, dict):
             continue
+        if checks_upgrade and source != "source_status":
+            continue
         records = section.get("records", [])
         records = records if isinstance(records, list) else []
         source_start, source_end = start, end
-        if section.get("mode") == "snapshot":
-            source_start = _stamp(section.get("captured_at_ms")) or collected
+        if source == "source_status" or section.get("mode") == "snapshot":
+            source_start = collected if source == "source_status" else _stamp(section.get("captured_at_ms")) or collected
             if source_start > collected + DAY_MS:
                 source_start = collected
             source_end = source_start + 1
@@ -409,8 +420,14 @@ def derive_batch(con, tenant, device_id, batch_id, payload, received_at_ms):
         status = status if status in ("ok", "denied", "background_denied", "unavailable", "error") else "unavailable"
         observations.append((tenant, device_id, batch_id, source, source_start, source_end, collected,
                              status, int(section.get("complete") is True), len(records)))
+        if source == "source_status" and checks_upgrade:
+            previous = con.execute("""SELECT start_ms,end_ms FROM native_wellbeing_observations
+                WHERE tenant=? AND device_id=? AND batch_id=? AND source='source_status'""",
+                (tenant, device_id, batch_id)).fetchone()
+            if previous:
+                _touch_dates(touched, max(cutoff, previous["start_ms"]), previous["end_ms"], zone)
         _touch_dates(touched, source_start, source_end, zone)
-        if status != "ok":
+        if status != "ok" or source == "source_status":
             continue
         for record in records:
             processed += 1
@@ -432,13 +449,38 @@ def derive_batch(con, tenant, device_id, batch_id, payload, received_at_ms):
                     (tenant, device_id, source, key)).fetchone()
                 if previous:
                     _touch_dates(touched, max(cutoff, previous["start_ms"]), max(previous["end_ms"], previous["start_ms"] + 1), zone)
+    # The native collector omits denied/unavailable sections and records their
+    # checks here instead. These describe access at collection time, not the
+    # historical interval currently being backfilled, and contribute no records.
+    checks = data.get("source_status")
+    seen = set()
+    if isinstance(checks, dict) and checks.get("status") == "ok" and isinstance(checks.get("records"), list) and collected >= cutoff:
+        for check in checks["records"][:MAX_SOURCE_CHECKS_PER_BATCH]:
+            if not isinstance(check, dict):
+                continue
+            source = check.get("source")
+            if not isinstance(source, str) or not source.strip() or len(source) > 100 or source == "source_status" or source in data or source in seen:
+                continue
+            seen.add(source)
+            status = check.get("status")
+            status = status if status in ("ok", "denied", "background_denied", "unavailable", "error") else "unavailable"
+            observations.append((tenant, device_id, batch_id, source, collected, collected + 1, collected,
+                                 status, int(check.get("complete") is True), 0))
+            _touch_dates(touched, collected, collected + 1, zone)
     con.executemany("""INSERT INTO native_wellbeing_facts VALUES(?,?,?,?,?,?,?,?,?)
         ON CONFLICT(tenant,device_id,source,record_key) DO UPDATE SET start_ms=excluded.start_ms,end_ms=excluded.end_ms,
         collected_at_ms=excluded.collected_at_ms,revision_ms=excluded.revision_ms,payload=excluded.payload
         WHERE excluded.revision_ms>native_wellbeing_facts.revision_ms OR
         (excluded.revision_ms=native_wellbeing_facts.revision_ms AND excluded.collected_at_ms>=native_wellbeing_facts.collected_at_ms)""", facts)
     con.executemany("INSERT OR IGNORE INTO native_wellbeing_observations VALUES(?,?,?,?,?,?,?,?,?,?)", observations)
-    con.execute("INSERT INTO native_wellbeing_batches VALUES(?,?,?,?)", (tenant, device_id, batch_id, received_at_ms))
+    if checks_upgrade:
+        con.executemany("""UPDATE native_wellbeing_observations SET start_ms=?,end_ms=?,collected_at_ms=?,status=?,complete=?,record_count=?
+            WHERE tenant=? AND device_id=? AND batch_id=? AND source='source_status'""",
+            [(row[4], row[5], row[6], row[7], row[8], row[9], tenant, device_id, batch_id)
+             for row in observations if row[3] == "source_status"])
+    con.execute("""INSERT INTO native_wellbeing_batches(tenant,device_id,batch_id,received_at_ms,projection_version) VALUES(?,?,?,?,?)
+        ON CONFLICT(tenant,device_id,batch_id) DO UPDATE SET projection_version=excluded.projection_version""",
+        (tenant, device_id, batch_id, received_at_ms, CURRENT_PROJECTION_VERSION))
     # A changed event can close a session in a cached adjacent day. Avoid
     # invalidating unrelated older summaries: their compact event facts may
     # already have rolled off the bounded fact store, while the daily totals
@@ -508,10 +550,11 @@ def backfill_wellbeing(con, tenant, device_id=None, limit=500):
     if device_id:
         selected = " AND b.device_id=?"
         params.append(device_id)
-    params.append(min(max(int(limit), 1), 500))
+    params.extend((CURRENT_PROJECTION_VERSION, min(max(int(limit), 1), 500)))
     rows = con.execute("""SELECT b.device_id,b.batch_id,b.payload,b.received_at_ms FROM native_batches b
         WHERE b.tenant=? AND b.payload IS NOT NULL""" + selected + """ AND NOT EXISTS(
-        SELECT 1 FROM native_wellbeing_batches w WHERE w.tenant=b.tenant AND w.device_id=b.device_id AND w.batch_id=b.batch_id)
+        SELECT 1 FROM native_wellbeing_batches w WHERE w.tenant=b.tenant AND w.device_id=b.device_id AND w.batch_id=b.batch_id
+            AND w.projection_version>=?)
         ORDER BY b.received_at_ms,b.rowid LIMIT ?""", params)
     processed, size = 0, 0
     for row in rows:
@@ -846,6 +889,11 @@ def _combine_days(selected, entries, across_devices=False):
         metrics.append({**chosen, "value": _precision(total), "samples": samples,
                         "min": min((v["min"] for v in available if v["min"] is not None), default=None),
                         "max": max((v["max"] for v in available if v["max"] is not None), default=None)})
+        if key in ("foreground", "screen", "unlocks", "wifi_rx", "wifi_tx", "mobile_rx", "mobile_tx") and any(
+                value["method"] == "android_bucket_estimate" for value in available):
+            # A weekly/all-device total still contains estimates even when its
+            # final day's or device's contribution was based on observed events.
+            metrics[-1]["method"] = "android_bucket_estimate"
         if any(value.get("retained_daily_summary") for value in available):
             metrics[-1]["retained_daily_summary"] = True
         origins = sorted({v["origin"] for v in available if v["origin"]})

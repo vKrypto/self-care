@@ -329,7 +329,7 @@ def delete_device(device_id: UUID, account=Depends(planner.current)):
 @router.get("/api/wellbeing", tags=["Digital wellbeing"])
 def get_wellbeing(device_id: UUID | None = None, start_date: date | None = None, end_date: date | None = None,
                   period: Literal["daily", "weekly"] = "daily", account=Depends(planner.current)):
-    from .wellbeing import backfill_wellbeing, read_wellbeing
+    from .wellbeing import CURRENT_PROJECTION_VERSION, backfill_wellbeing, read_wellbeing
     with planner.connect() as con:
         if device_id is not None:
             owned_device(con, account["id"], device_id)
@@ -339,9 +339,11 @@ def get_wellbeing(device_id: UUID | None = None, start_date: date | None = None,
         if device_id:
             selected = " AND b.device_id=?"
             params.append(str(device_id))
+        params.append(CURRENT_PROJECTION_VERSION)
         pending = con.execute("""SELECT COUNT(*) FROM native_batches b WHERE b.tenant=? AND b.payload IS NOT NULL"""
                               + selected + """ AND NOT EXISTS (SELECT 1 FROM native_wellbeing_batches w
-                              WHERE w.tenant=b.tenant AND w.device_id=b.device_id AND w.batch_id=b.batch_id)""", params).fetchone()[0]
+                              WHERE w.tenant=b.tenant AND w.device_id=b.device_id AND w.batch_id=b.batch_id
+                              AND w.projection_version>=?)""", params).fetchone()[0]
         try:
             result = read_wellbeing(con, account["id"], device_id=str(device_id) if device_id else None,
                                     start_date=start_date.isoformat() if start_date else None,

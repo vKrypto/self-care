@@ -3,6 +3,13 @@ import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { signUpMember, removeMember } from "./member.js";
 
+test.beforeEach(async ({ page }) => {
+  // These data-flow checks do not depend on external font servers.
+  await page.route(/^https:\/\/fonts\.(googleapis|gstatic)\.com\//, (route) =>
+    route.abort(),
+  );
+});
+
 test.afterEach(async ({ page }) => {
   await removeMember(page);
 });
@@ -91,11 +98,20 @@ async function syncedAccount(page) {
           },
         },
       ]),
-      health_weight: {
-        status: "permission_denied",
-        complete: false,
-        records: [],
-      },
+      source_status: section([
+        {
+          source: "health_weight",
+          status: "denied",
+          complete: false,
+          collected: false,
+        },
+        {
+          source: "health_steps",
+          status: "ok",
+          complete: true,
+          collected: true,
+        },
+      ]),
       health_height: section([
         {
           _type: "HeightRecord",
@@ -224,6 +240,11 @@ test("device history, source pagination, and daily/weekly totals use real synced
   await expect(
     page
       .locator(".wellbeing-health-item")
+      .filter({ hasText: "Recorded weight" }),
+  ).toContainText("Permission required");
+  await expect(
+    page
+      .locator(".wellbeing-health-item")
       .filter({ hasText: "Recorded height" })
       .locator("strong"),
   ).toHaveText("1.75 m");
@@ -254,6 +275,52 @@ test("device history, source pagination, and daily/weekly totals use real synced
   await expect(
     page.getByRole("button", { name: "Daily", exact: true }),
   ).toHaveAttribute("aria-pressed", "true");
+});
+
+test("daily and weekly unlock summaries are labeled as estimates", async ({
+  page,
+}) => {
+  const { payload, headers } = await syncedAccount(page);
+  const summaryDate = "2026-09-30";
+  const summaryStart = Date.parse(`${summaryDate}T01:00:00Z`);
+  const summaryEnd = summaryStart + 3_600_000;
+  const upload = await page.request.post("/api/native/batches", {
+    headers,
+    data: {
+      ...payload,
+      batch_id: randomUUID(),
+      window: { start_ms: summaryStart, end_ms: summaryEnd },
+      collected_at_ms: summaryEnd,
+      data: {
+        usage_event_stats: section([
+          {
+            event_type: 18,
+            first_timestamp_ms: summaryStart,
+            last_timestamp_ms: summaryEnd,
+            count: 4,
+            total_time_ms: 0,
+          },
+        ]),
+      },
+    },
+  });
+  expect(upload.ok()).toBe(true);
+  await page
+    .getByRole("button", { name: "Digital wellbeing", exact: true })
+    .click();
+  await page.getByLabel("Wellbeing date").fill(summaryDate);
+  const unlocks = page
+    .locator(".wellbeing-metric")
+    .filter({ hasText: "Device unlocks" });
+  await expect(unlocks.locator("strong")).toHaveText("4");
+  await expect(unlocks).toContainText(
+    "Estimated from Android unlock summaries",
+  );
+  await page.getByRole("button", { name: "Weekly", exact: true }).click();
+  await expect(unlocks.locator("strong")).toHaveText("5");
+  await expect(unlocks).toContainText(
+    "Estimated from Android unlock summaries",
+  );
 });
 
 test("connecting explains the account and server; removal deletes only the selected test device", async ({

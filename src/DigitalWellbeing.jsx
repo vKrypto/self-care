@@ -17,6 +17,7 @@ import {
   formatMetric,
   formatTime,
   sourceLabel,
+  sourceStatusLabel,
   sumAvailable,
   weekBounds,
 } from "./deviceData";
@@ -118,6 +119,9 @@ export default function DigitalWellbeing({
   );
   const screenMetric = summary?.metrics?.find(
     (metric) => metric.key === "screen",
+  );
+  const unlockMetric = summary?.metrics?.find(
+    (metric) => metric.key === "unlocks",
   );
   const highestDuration = Math.max(
     ...days.map((item) => item.usage?.foreground_ms || 0),
@@ -317,7 +321,11 @@ export default function DigitalWellbeing({
                         ? "No data"
                         : summary.usage.unlocks.toLocaleString()
                     }
-                    hint="From reported unlock events"
+                    hint={
+                      unlockMetric?.method === "android_bucket_estimate"
+                        ? "Estimated from Android unlock summaries"
+                        : "From reported unlock events"
+                    }
                   />
                   <MetricCard
                     icon={Wifi}
@@ -434,8 +442,7 @@ export default function DigitalWellbeing({
                           <strong>{formatMetric(metric)}</strong>
                           <small>
                             {metric.value == null
-                              ? metric.status?.replace(/_/g, " ") ||
-                                "Not available"
+                              ? sourceStatusLabel(metric.status)
                               : `${metric.samples || 0} readings${metric.origin ? ` · ${metric.origin}` : ""}`}
                           </small>
                           {metric.origin_count > 1 && (
@@ -466,10 +473,7 @@ export default function DigitalWellbeing({
                           >
                             <span>{metric.label}</span>
                             <strong>No data</strong>
-                            <small>
-                              {metric.status?.replace(/_/g, " ") ||
-                                "Not available"}
-                            </small>
+                            <small>{sourceStatusLabel(metric.status)}</small>
                           </div>
                         ))}
                       </div>
@@ -496,7 +500,7 @@ export default function DigitalWellbeing({
                         <span
                           className={`device-badge ${["ok", "available"].includes(source.status) ? "" : "muted"}`}
                         >
-                          {source.status?.replace(/_/g, " ") || "Unknown"}
+                          {sourceStatusLabel(source.status)}
                           {source.complete === false ? " · Incomplete" : ""}
                         </span>
                       </div>
