@@ -438,7 +438,13 @@ export default function DigitalWellbeing({
                                 "Not available"
                               : `${metric.samples || 0} readings${metric.origin ? ` · ${metric.origin}` : ""}`}
                           </small>
-                            {metric.origin_count > 1 && <small>{metric.method === "reported_daily_origins" ? "Daily totals use different reported origins" : "Multiple sources · see reported origin"}</small>}
+                          {metric.origin_count > 1 && (
+                            <small>
+                              {metric.method === "reported_daily_origins"
+                                ? "Daily totals use different reported origins"
+                                : "Multiple sources · see reported origin"}
+                            </small>
+                          )}
                         </div>
                       ))
                     ) : (

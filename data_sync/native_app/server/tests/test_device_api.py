@@ -211,7 +211,7 @@ def test_source_display_json_preserves_64bit_integer_precision_and_original_type
     first = client.get(route + "/sources/activity_snapshot?limit=2").json()
     second = client.get(route + "/sources/activity_snapshot?limit=2&offset=2").json()
     assert first["records"] == [record, str(large)] and second["records"] == [None, 1.25]
-    assert first["record_jsons"] == [json.dumps(record, ensure_ascii=False, indent=2), f'"{large}"']
+    assert first["record_jsons"] == [json.dumps(record, ensure_ascii=False, indent=2, sort_keys=True), f'"{large}"']
     assert second["record_jsons"] == ["null", "1.25"]
     assert len(first["record_jsons"]) == len(first["records"]) == 2
     assert f'"sensor_timestamp_nanos": {large}' in first["record_jsons"][0]

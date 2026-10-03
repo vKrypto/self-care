@@ -1,5 +1,6 @@
 import { test, expect } from "@playwright/test";
 import { randomUUID } from "node:crypto";
+import { readFile } from "node:fs/promises";
 import { signUpMember, removeMember } from "./member.js";
 
 test.afterEach(async ({ page }) => {
@@ -73,6 +74,7 @@ async function syncedAccount(page) {
         Array.from({ length: 30 }, (_, i) => ({
           package_name: `com.example.app${i}`,
           label: `Example app ${i}`,
+          ...(i === 0 ? { sensor_timestamp_nanos: "__exact_nanos__" } : {}),
         })),
         { mode: "snapshot" },
       ),
@@ -118,19 +120,22 @@ async function syncedAccount(page) {
       ]),
     },
   };
-  const first = await page.request.post("/api/native/batches", {
-    headers,
-    data: payload,
-  });
+  const sendExport = (body) =>
+    page.request.post("/api/native/batches", {
+      headers: { ...headers, "Content-Type": "application/json" },
+      data: JSON.stringify(body).replace(
+        '"__exact_nanos__"',
+        "9007199254740993",
+      ),
+    });
+  const first = await sendExport(payload);
   expect(first.ok()).toBe(true);
-  const retry = await page.request.post("/api/native/batches", {
-    headers,
-    data: payload,
-  });
+  const retry = await sendExport(payload);
   expect((await retry.json()).duplicate).toBe(true);
-  const next = await page.request.post("/api/native/batches", {
-    headers,
-    data: { ...payload, batch_id: randomUUID(), collected_at_ms: end + 1000 },
+  const next = await sendExport({
+    ...payload,
+    batch_id: randomUUID(),
+    collected_at_ms: end + 1000,
   });
   expect(next.ok()).toBe(true);
   await page.goto("/");
@@ -168,6 +173,17 @@ test("device history, source pagination, and daily/weekly totals use real synced
   await page.getByText("Record 1", { exact: true }).click();
   await expect(page.locator(".device-record").first()).toContainText(
     "Example app 0",
+  );
+  await expect(page.locator(".device-record").first()).toContainText(
+    "9007199254740993",
+  );
+  const downloadPromise = page.waitForEvent("download");
+  await page
+    .getByRole("button", { name: "Download JSON", exact: true })
+    .click();
+  const downloaded = await downloadPromise;
+  expect(await readFile(await downloaded.path(), "utf8")).toContain(
+    '"sensor_timestamp_nanos":9007199254740993',
   );
   await page.getByRole("button", { name: "Next", exact: true }).click();
   await expect(page.getByText("Record 26", { exact: true })).toBeVisible();
